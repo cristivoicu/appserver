@@ -1,0 +1,10 @@
+
+   .----------------------------------.
+   |                                  |
+   |        APPLICATION SERVER        |
+   |       VER: ${project.version}    |
+   |          VOICU CRISTIAN          |
+   |                                  |
+   '..................................'
+
+       ${project.name}
