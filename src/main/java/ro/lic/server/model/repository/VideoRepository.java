@@ -5,6 +5,8 @@ import org.springframework.stereotype.Component;
 import ro.lic.server.model.dao.VideoDao;
 import ro.lic.server.model.tables.Video;
 
+import java.util.List;
+
 @Component
 public class VideoRepository {
     @Autowired
@@ -14,5 +16,7 @@ public class VideoRepository {
         videoDao.save(video);
     }
 
-
+    public List<Video> getListVideoForUser(Long userId){
+        return videoDao.getVideoForUser(userId);
+    }
 }

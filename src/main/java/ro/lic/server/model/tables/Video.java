@@ -26,13 +26,15 @@ public class Video implements Serializable {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
 
-    @Column(unique = true)
+    @Column(unique = true,
+        nullable = false)
     private String name;
 
     @JsonIgnore
     @ManyToOne
-    private User user;
+    private  transient User user;
 
+    @Column(nullable = false)
     private Date date;
     //endregion
 

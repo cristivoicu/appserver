@@ -4,9 +4,12 @@ import org.kurento.client.*;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Encapsulate a media pipeline needed by record the media stream received from client
+ * Encapsulate the media pipeline need to record videos from a user
+ * Is also contains a map of webrtc endpoints needed to catch the live stream
  */
 public class RecordMediaPipeline {
     private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd__HH-mm-ss");
@@ -14,16 +17,18 @@ public class RecordMediaPipeline {
     private final String recordingPath;
 
     private final MediaPipeline mediaPipeline;
-    private final WebRtcEndpoint webRtcEndpoint;
+    private final WebRtcEndpoint recordingWebRtcEndpoint;
     private final RecorderEndpoint recorderEndpoint;
 
-    public RecordMediaPipeline(KurentoClient kurentoClient, String from){
+    private final Map<String, WebRtcEndpoint> subscribers; //outgoings
+
+    public RecordMediaPipeline(KurentoClient kurentoClient, String from) {
         // create recording path
         recordingPath = String.format("file:///home/kurento/UsersVideos/%s__%s%s", dateFormat.format(new Date()), from, RECORDING_EXT_WEBM);
         // create media pipeline
         mediaPipeline = kurentoClient.createMediaPipeline();
         // create endpoints
-        webRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
+        recordingWebRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
         recorderEndpoint = new RecorderEndpoint.Builder(mediaPipeline, recordingPath)
                 .withMediaProfile(MediaProfileSpecType.WEBM)
                 .build();
@@ -50,28 +55,64 @@ public class RecordMediaPipeline {
         });
 
         // connections
-        webRtcEndpoint.connect(recorderEndpoint);
+        recordingWebRtcEndpoint.connect(recorderEndpoint);
         //webRtcEndpoint.connect(recorderEndpoint, MediaType.VIDEO);
+
+        subscribers = new ConcurrentHashMap<>();
     }
 
-    public void record(){
+    /**
+     * Subscribe user to the recording session
+     *
+     * @param session is the subscriber user session
+     */
+    public void addSubscriber(UserSession session) {
+        WebRtcEndpoint subscriberWebRtcEp = new WebRtcEndpoint.Builder(mediaPipeline).build();
+        recordingWebRtcEndpoint.connect(subscriberWebRtcEp);
+        subscriberWebRtcEp.connect(recorderEndpoint);
+        subscribers.put(session.getSessionId(), subscriberWebRtcEp);
+    }
+
+    /**
+     * Unsubscribe user to the recording session
+     *
+     * @param session is the subscriber user session
+     */
+    public void unsubscribe(UserSession session) {
+        WebRtcEndpoint subscriberWebRtcEp = subscribers.get(session.getSessionId());
+        recordingWebRtcEndpoint.disconnect(subscriberWebRtcEp);
+
+        subscribers.remove(session.getSessionId());
+    }
+
+    public WebRtcEndpoint getWebRtcEpOfSubscriber(UserSession session){
+        return subscribers.get(session.getSessionId());
+    }
+
+    public void record() {
         recorderEndpoint.record();
     }
 
-    public String generateSdpAnswerFromCaller(String sdpOffer){
-        return webRtcEndpoint.processOffer(sdpOffer);
+    public String generateSdpAnswerFromRecordingEp(String sdpOffer) {
+        return recordingWebRtcEndpoint.processOffer(sdpOffer);
     }
 
-    public void addCandidate(IceCandidate iceCandidate){
-        webRtcEndpoint.addIceCandidate(iceCandidate);
+    public void addLiveCandidate(IceCandidate iceCandidate, UserSession user){
+        subscribers.get(user.getSessionId()).addIceCandidate(iceCandidate);
     }
 
-    public void release(){
-        webRtcEndpoint.release();
+    public void addCandidate(IceCandidate iceCandidate) {
+        recordingWebRtcEndpoint.addIceCandidate(iceCandidate);
+    }
+
+    public void release() {
+        recordingWebRtcEndpoint.release();
         recorderEndpoint.stopAndWait();
         recorderEndpoint.stop();
         recorderEndpoint.release();
         mediaPipeline.release();
+
+        //todo: release the subscriber endpoints
     }
 
     //region Getters and setters
@@ -80,8 +121,8 @@ public class RecordMediaPipeline {
         return mediaPipeline;
     }
 
-    public WebRtcEndpoint getWebRtcEndpoint() {
-        return webRtcEndpoint;
+    public WebRtcEndpoint getRecordingWebRtcEndpoint() {
+        return recordingWebRtcEndpoint;
     }
 
     public RecorderEndpoint getRecorderEndpoint() {

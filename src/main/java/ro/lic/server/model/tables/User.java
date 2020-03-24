@@ -83,6 +83,10 @@ public class User implements Serializable {
     }
 
     //region Getters and Setters
+    public Long getId() {
+        return id;
+    }
+
     public void setRole(Roles role) {
         this.role = role;
     }
@@ -150,5 +154,14 @@ public class User implements Serializable {
     public void setProgramEnd(String programEnd) {
         this.programEnd = programEnd;
     }
+
+    public boolean isOnline() {
+        return isOnline;
+    }
+
+    public void setOnline(boolean online) {
+        isOnline = online;
+    }
+
     //endregion
 }

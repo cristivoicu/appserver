@@ -18,7 +18,7 @@ public class UserSession {
     private final WebSocketSession session;
     private final Roles role;
 
-    private RecordMediaPipeline recordMediaPipeline;
+    private RecordMediaPipeline recordMediaPipeline = null;
 
     public UserSession(WebSocketSession session, String name, Roles role) {
         this.session = session;
@@ -52,12 +52,17 @@ public class UserSession {
         this.recordMediaPipeline = recordMediaPipeline;
     }
 
-    public void addCandidate(IceCandidate candidate){
+    public void addCandidateRec(IceCandidate candidate){
         recordMediaPipeline.addCandidate(candidate);
     }
 
+    public void addCandidateLive(IceCandidate candidate){
+        recordMediaPipeline.addLiveCandidate(candidate, this);
+    }
+
     public void release(){
-        recordMediaPipeline.release();
+        if(recordMediaPipeline != null)
+            recordMediaPipeline.release();
     }
 }
 

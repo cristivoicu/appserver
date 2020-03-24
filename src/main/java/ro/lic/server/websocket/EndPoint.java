@@ -22,6 +22,7 @@ public class EndPoint{
         session.getUserPrincipal();
 
 
+
     }
 
     @OnClose

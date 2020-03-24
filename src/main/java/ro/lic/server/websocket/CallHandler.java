@@ -74,36 +74,51 @@ public class CallHandler extends TextWebSocketHandler {
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         try {
-            JsonObject jsonMessage = gson.fromJson(message.getPayload(), JsonObject.class);
+            JsonObject receivedMessage = gson.fromJson(message.getPayload(), JsonObject.class);
             UserSession user = registry.getBySession(session);
 
             if (user != null) {
-                System.out.println(String.format("Incoming message from user '%s': %s", user.getUsername(), jsonMessage));
+                System.out.println(String.format("Incoming message from user '%s': %s", user.getUsername(), receivedMessage));
             } else {
-                System.out.println(String.format("Incoming message from new user: %s}", jsonMessage));
+                System.out.println(String.format("Incoming message from unknown user: %s}", receivedMessage));
                 return;
             }
 
-            switch (jsonMessage.get("id").getAsString()) {
+            switch (receivedMessage.get("id").getAsString()) {
                 case EVENT_START_REC:
                     System.out.println("Event start rec!");
-                    startRec(user, jsonMessage);
+                    startRec(user, receivedMessage);
                     break;
                 case EVENT_STOP_REC:
                     System.out.println("Event stop rec!");
-                    stopRec(user, jsonMessage);
+                    stopRec(user, receivedMessage);
+                    break;
+                case EVENT_LIVE_VIDEO:
+                    String from = receivedMessage.get("from").getAsString();
+                    String sdpOffer = receivedMessage.get("sdpOffer").getAsString();
+                    startLiveVideo(from, sdpOffer, user);
                     break;
                 case EVENT_PLAY:
 //                    play(user, jsonMessage);
                     break;
                 case EVENT_ICE_CANDIDATE: {
-                    System.out.println("on Ice" + jsonMessage.toString());
-                    JsonObject candidate = jsonMessage.get("candidate").getAsJsonObject();
-                    if (user != null) {
-                        IceCandidate cand =
-                                new IceCandidate(candidate.get("candidate").getAsString(), candidate.get("sdpMid")
-                                        .getAsString(), candidate.get("sdpMLineIndex").getAsInt());
-                        user.addCandidate(cand);
+                    System.out.println("on Ice" + receivedMessage.toString());
+                    String iceFor = receivedMessage.get("for").getAsString();
+                    JsonObject candidate = receivedMessage.get("candidate").getAsJsonObject();
+
+                    IceCandidate cand =
+                            new IceCandidate(candidate.get("candidate").getAsString(), candidate.get("sdpMid")
+                                    .getAsString(), candidate.get("sdpMLineIndex").getAsInt());
+                    switch (iceFor) {
+                        case ICE_FOR_LIVE:
+                            user.addCandidateLive(cand);
+                            break;
+                        case ICE_FOR_PLAY:
+
+                            break;
+                        case ICE_FOR_REC:
+                            user.addCandidateRec(cand);
+                            break;
                     }
                     break;
                 }
@@ -113,17 +128,17 @@ public class CallHandler extends TextWebSocketHandler {
                     break;
                 case EVENT_ENROLL:
                     if (Authoriser.authoriseEnroll(user)) {
-                        System.out.println("Enroll event: " + jsonMessage.toString());
-                        enroll(session, jsonMessage);
+                        System.out.println("Enroll event: " + receivedMessage.toString());
+                        enroll(session, receivedMessage);
                     } else {
                         //todo: log security and disconnect user
                     }
                     break;
-                case EVENT_LIST_USERS:
+                case REQ_LIST_USERS:
                     if (Authoriser.authoriseListUsers(user)) {
-                        System.out.println("List users event: " + jsonMessage.toString());
+                        System.out.println("List users event: " + receivedMessage.toString());
 
-                        String type = jsonMessage.get("type").getAsString();
+                        String type = receivedMessage.get("type").getAsString();
                         switch (type) {
                             case "all":
                                 getAllUsers(session);
@@ -141,8 +156,11 @@ public class CallHandler extends TextWebSocketHandler {
                         //todo: Log security and disconnect user
                     }
                     break;
+                case REQ_LIST_RECORDED_VIDEOS:
+                    handleRecordedVideoListRequest(user, receivedMessage);
+                    break;
                 default:
-                    System.out.println("default message");
+                    System.out.println("default case");
                     break;
             }
         } catch (JsonSyntaxException e) {
@@ -176,13 +194,14 @@ public class CallHandler extends TextWebSocketHandler {
         caller.setRecordMediaPipeline(recordMediaPipeline);
 
         // sdp negotiating
-        String sdpAnswer = recordMediaPipeline.generateSdpAnswerFromCaller(sdpOffer);
+        String sdpAnswer = recordMediaPipeline.generateSdpAnswerFromRecordingEp(sdpOffer);
 
-        recordMediaPipeline.getWebRtcEndpoint().addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
+        recordMediaPipeline.getRecordingWebRtcEndpoint().addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
             @Override
             public void onEvent(IceCandidateFoundEvent event) {
                 JsonObject response = new JsonObject();
                 response.addProperty("id", "iceCandidate");
+                response.addProperty("for", "recording");
                 response.add("candidate", JsonUtils
                         .toJsonObject(event.getCandidate()));
                 try {
@@ -200,13 +219,13 @@ public class CallHandler extends TextWebSocketHandler {
         response.addProperty("response", "accepted");
         response.addProperty("sdpAnswer", sdpAnswer);
 
-        synchronized (caller){
+        synchronized (caller) {
             caller.sendMessage(response);
         }
 
-        recordMediaPipeline.getWebRtcEndpoint().gatherCandidates();
+        recordMediaPipeline.getRecordingWebRtcEndpoint().gatherCandidates();
 
-        recordMediaPipeline.getWebRtcEndpoint().addMediaFlowInStateChangeListener(new EventListener<MediaFlowInStateChangeEvent>() {
+        recordMediaPipeline.getRecordingWebRtcEndpoint().addMediaFlowInStateChangeListener(new EventListener<MediaFlowInStateChangeEvent>() {
             @Override
             public void onEvent(MediaFlowInStateChangeEvent mediaFlowInStateChangeEvent) {
                 System.out.println("Media flow incoming");
@@ -214,11 +233,10 @@ public class CallHandler extends TextWebSocketHandler {
             }
         });
 
-        recordMediaPipeline.getWebRtcEndpoint().addMediaFlowOutStateChangeListener(mediaFlowOutStateChangeEvent -> {
+        recordMediaPipeline.getRecordingWebRtcEndpoint().addMediaFlowOutStateChangeListener(mediaFlowOutStateChangeEvent -> {
             System.out.println("Media out listener!");
             recordMediaPipeline.record();
         });
-
 
 
         User user = userRepository.getUser(caller.getUsername());
@@ -226,12 +244,54 @@ public class CallHandler extends TextWebSocketHandler {
         videoRepository.addVideo(video);
     }
 
-    private void stopRec(UserSession userSession, JsonObject jsonObject){
+    private void stopRec(UserSession userSession, JsonObject jsonObject) {
         RecordMediaPipeline pipeline = recordPipeline.get(userSession.getSessionId());
 
         pipeline.release();
         //todo: notify observers about stopping the live stream
 
+    }
+
+
+    private void startLiveVideo(String from, String sdpOffer, UserSession requestingUser) throws IOException {
+        UserSession userRecording = registry.getByName(from);
+        RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getSessionId());
+
+        recordMediaPipeline.addSubscriber(requestingUser);
+        requestingUser.setRecordMediaPipeline(recordMediaPipeline);
+
+        // sdp negotiation
+        String sdpAnswer = recordMediaPipeline.getWebRtcEpOfSubscriber(requestingUser).processOffer(sdpOffer);
+
+        recordMediaPipeline.getWebRtcEpOfSubscriber(requestingUser).addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
+            @Override
+            public void onEvent(IceCandidateFoundEvent event) {
+                JsonObject response = new JsonObject();
+                response.addProperty("id", "iceCandidate");
+                response.addProperty("for", "live");
+                response.add("candidate", JsonUtils
+                        .toJsonObject(event.getCandidate()));
+                try {
+                    synchronized (requestingUser.getSession()) {
+                        requestingUser.getSession().sendMessage(new TextMessage(response.toString()));
+                    }
+                } catch (IOException e) {
+                    log.debug(e.getMessage());
+                }
+            }
+        });
+
+        JsonObject response = new JsonObject();
+        response.addProperty("id", "liveResponse");
+        response.addProperty("response", "accepted");
+        response.addProperty("sdpAnswer", sdpAnswer);
+
+        synchronized (requestingUser.getSession()) {
+            System.out.println("Sending sdp ans message to " + requestingUser.getUsername());
+            requestingUser.sendMessage(response);
+        }
+
+        recordMediaPipeline.getWebRtcEpOfSubscriber(requestingUser).gatherCandidates();
     }
 
     private void getAllUsers(final WebSocketSession session) throws IOException {
@@ -244,6 +304,24 @@ public class CallHandler extends TextWebSocketHandler {
 
         synchronized (session) {
             session.sendMessage(new TextMessage(response.toString()));
+        }
+    }
+
+    private void handleRecordedVideoListRequest(final UserSession userSession, JsonObject message) throws IOException {
+        if(Authoriser.authoriseListRecordedVideos(userSession)){
+            String forUser = message.get("forUser").getAsString();
+            User user = userRepository.getUser(forUser);
+
+            List<Video> videos = videoRepository.getListVideoForUser(user.getId());
+
+            JsonObject response = new JsonObject();
+            response.addProperty("id", "requestListVideoResponse");
+            response.addProperty("forUser", forUser);
+            response.addProperty("videos", gson.toJson(videos));
+
+            synchronized (userSession){
+                userSession.sendMessage(response);
+            }
         }
     }
 
