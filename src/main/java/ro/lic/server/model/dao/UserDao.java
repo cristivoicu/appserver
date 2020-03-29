@@ -15,7 +15,9 @@ import javax.transaction.Transactional;
 import java.util.List;
 
 @Repository
-public interface UserDao extends JpaRepository<User, Long> {
+public interface UserDao extends CrudRepository<User, Long> {
+    @Query(value = "select * from users", nativeQuery = true)
+    List<User> findAll();
 
     @Modifying
     @Transactional

@@ -32,72 +32,86 @@ import static ro.lic.server.constants.Constants.*;
 /**
  * Media Pipeline (connection of Media Elements) for playing the recorded one to one video
  * communication.
- * 
+ *
  * @author Boni Garcia (bgarcia@gsyc.es)
  * @since 6.1.1
  */
 public class PlayMediaPipeline {
 
-  private static final Logger log = LoggerFactory.getLogger(PlayMediaPipeline.class);
+    private static final Logger log = LoggerFactory.getLogger(PlayMediaPipeline.class);
 
-  private final MediaPipeline pipeline;
-  private WebRtcEndpoint webRtc;
-  private final PlayerEndpoint player;
+    private final MediaPipeline pipeline;
+    private WebRtcEndpoint webRtc;
+    private final PlayerEndpoint player;
 
-  public PlayMediaPipeline(KurentoClient kurento, String user, final WebSocketSession session) {
-    // Media pipeline
-    pipeline = kurento.createMediaPipeline();
+    public PlayMediaPipeline(KurentoClient kurento, final String path, final WebSocketSession session) {
+        // Media pipeline
+        pipeline = kurento.createMediaPipeline();
 
-    // Media Elements (WebRtcEndpoint, PlayerEndpoint)
-    webRtc = new WebRtcEndpoint.Builder(pipeline).build();
-    //player = new PlayerEndpoint.Builder(pipeline, RECORDING_PATH + user + RECORDING_EXT).build();
-    player = new PlayerEndpoint.Builder(pipeline, RECORDING_STATIC_PATH).build();
+        // Media Elements (WebRtcEndpoint, PlayerEndpoint)
+        webRtc = new WebRtcEndpoint.Builder(pipeline).build();
+        //player = new PlayerEndpoint.Builder(pipeline, RECORDING_PATH + user + RECORDING_EXT).build();
+        player = new PlayerEndpoint.Builder(pipeline, path).build();
 
-    // Connection
-    player.connect(webRtc);
+        // Connection
+        player.connect(webRtc);
 
-    // Player listeners
-    player.addErrorListener(new EventListener<ErrorEvent>() {
-      @Override
-      public void onEvent(ErrorEvent event) {
-        log.info("ErrorEvent: {}", event.getDescription());
-        sendPlayEnd(session);
-      }
-    });
-  }
-
-  public void sendPlayEnd(WebSocketSession session) {
-    try {
-      JsonObject response = new JsonObject();
-      response.addProperty("id", "playEnd");
-      session.sendMessage(new TextMessage(response.toString()));
-    } catch (IOException e) {
-      log.error("Error sending playEndOfStream message", e);
+        // Player listeners
+        /*player.addErrorListener(new EventListener<ErrorEvent>() {
+            @Override
+            public void onEvent(ErrorEvent event) {
+                log.info("ErrorEvent: {}", event.getDescription());
+                sendPlayEnd(session);
+            }
+        });*/
     }
 
-    // Release pipeline
-    pipeline.release();
-    this.webRtc = null;
-  }
+    public void sendPlayEnd(WebSocketSession session) {
+        try {
+            JsonObject response = new JsonObject();
+            response.addProperty("id", "playEnd");
+            session.sendMessage(new TextMessage(response.toString()));
+        } catch (IOException e) {
+            log.error("Error sending playEndOfStream message", e);
+        }
 
-  public void play() {
-    player.play();
-  }
+        // Release pipeline
+        pipeline.release();
+        this.webRtc = null;
+    }
 
-  public String generateSdpAnswer(String sdpOffer) {
-    return webRtc.processOffer(sdpOffer);
-  }
+    public void play() {
+        player.play();
+    }
 
-  public MediaPipeline getPipeline() {
-    return pipeline;
-  }
+    public void addIceCandidate(IceCandidate iceCandidate) {
+        webRtc.addIceCandidate(iceCandidate, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("Candidate added successfully!");
+            }
 
-  public WebRtcEndpoint getWebRtc() {
-    return webRtc;
-  }
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("Error at adding candidates...");
+            }
+        });
+    }
 
-  public PlayerEndpoint getPlayer() {
-    return player;
-  }
+    public String generateSdpAnswer(String sdpOffer) {
+        return webRtc.processOffer(sdpOffer);
+    }
+
+    public MediaPipeline getPipeline() {
+        return pipeline;
+    }
+
+    public WebRtcEndpoint getWebRtc() {
+        return webRtc;
+    }
+
+    public PlayerEndpoint getPlayer() {
+        return player;
+    }
 
 }

@@ -2,9 +2,7 @@
    .----------------------------------.
    |                                  |
    |        APPLICATION SERVER        |
-   |       VER: ${project.version}    |
+   |             VER: 1.0             |
    |          VOICU CRISTIAN          |
    |                                  |
    '..................................'
-
-       ${project.name}

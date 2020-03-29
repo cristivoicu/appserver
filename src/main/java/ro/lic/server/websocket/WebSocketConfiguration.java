@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.security.crypto.bcrypt.BCrypt;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -16,10 +18,12 @@ import org.springframework.web.socket.server.standard.ServerEndpointExporter;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import ro.lic.server.model.Roles;
 import ro.lic.server.model.repository.UserRepository;
+import ro.lic.server.model.tables.User;
 import ro.lic.server.websocket.utils.UserRegistry;
 
 import java.io.IOException;
 import java.security.Principal;
+import java.util.Date;
 import java.util.Map;
 
 import static ro.lic.server.constants.Constants.KMS_WS_URI_DEFAULT;
@@ -29,7 +33,7 @@ import static ro.lic.server.constants.Constants.KMS_WS_URI_PROP;
 @EnableWebSocket
 public class WebSocketConfiguration implements WebSocketConfigurer {
     @Autowired
-    private UserRepository userDao ;
+    private UserRepository userDao;
 
     @Bean
     public CallHandler callHandler() {
@@ -41,10 +45,10 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
         return new UserRegistry();
     }
 
-	@Bean
-	public KurentoClient kurentoClient() {
-		return KurentoClient.create(System.getProperty(KMS_WS_URI_PROP, KMS_WS_URI_DEFAULT));
-	}
+    @Bean
+    public KurentoClient kurentoClient() {
+        return KurentoClient.create(System.getProperty(KMS_WS_URI_PROP, KMS_WS_URI_DEFAULT));
+    }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry webSocketHandlerRegistry) {
@@ -54,13 +58,12 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
     }
 
 
-
     @Bean
     public ServerEndpointExporter serverEndpointExporter() {
         return new ServerEndpointExporter();
     }
 
-    private class HandShake implements HandshakeInterceptor{
+    private class HandShake implements HandshakeInterceptor {
 
         private Roles role = null;
 
@@ -70,6 +73,17 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
                                        org.springframework.web.socket.WebSocketHandler webSocketHandler,
                                        Map<String, Object> map) throws Exception {
 
+            /*User user = new User(Roles.ADMIN, "admin",
+                    BCrypt.hashpw("admin", BCrypt.gensalt()),
+                    "ADMIN",
+                    "ADMIN_ADDR",
+                    "0700000000",
+                    new Date(),
+                    "00:00",
+                    "00:00");
+
+            userDao.addUser(user);*/
+
             String username = serverHttpRequest.getHeaders().get("username").toString();
             String password = serverHttpRequest.getHeaders().get("password").toString();
 
@@ -78,13 +92,13 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
 
             role = userDao.authenticate(username, password);
 
-            if(role != null){
+            if (role != null) {
                 return true;
-            }else{
+            } else {
                 serverHttpResponse.setStatusCode(HttpStatus.UNAUTHORIZED);
                 return false;
             }
-            
+
         }
 
         @Override
@@ -99,8 +113,10 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
 
     }
 
-    /** Intra aici inainte sa stabileasca conexiunea la server*/
-    public class HandShakeHandler extends DefaultHandshakeHandler{
+    /**
+     * Intra aici inainte sa stabileasca conexiunea la server
+     */
+    public class HandShakeHandler extends DefaultHandshakeHandler {
         @Override
         protected Principal determineUser(ServerHttpRequest request, WebSocketHandler wsHandler, Map<String, Object> attributes) {
             // determine the user

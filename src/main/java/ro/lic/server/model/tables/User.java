@@ -69,8 +69,9 @@ public class User implements Serializable {
             length = 5)
     private String programEnd;
 
-    @Column(nullable = false, columnDefinition = "boolean default false")
-    private transient boolean isOnline;
+    @Column(nullable = false,
+            columnDefinition = "boolean default false")
+    private boolean isOnline;
 
     public Roles getRole() {
         return role;

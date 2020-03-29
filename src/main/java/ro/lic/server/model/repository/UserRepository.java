@@ -28,6 +28,8 @@ public class UserRepository {
 
     public Roles authenticate(String username, String password){
         User user = userDao.getUserByUsername(username);
+        if(user == null)
+            return null;
         String hashPassword = user.getPassword();
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
         return encoder.matches(password, hashPassword) ? user.getRole() : null;

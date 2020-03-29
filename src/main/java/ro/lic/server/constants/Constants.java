@@ -13,5 +13,4 @@ public class Constants {
     public static final String RECORDING_PATH = "file:///home/kurento/Desktop/" + df.format(new Date()) + "-";
     public static final String RECORDING_EXT = ".mp4";
 
-    public static final String RECORDING_STATIC_PATH = "file:///tmp/2020-03-03_23-26-11-15-mimi.webm";
 }
