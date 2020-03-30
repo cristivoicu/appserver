@@ -2,6 +2,7 @@ package ro.lic.server.model.tables;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import org.springframework.stereotype.Component;
 import ro.lic.server.model.Roles;
@@ -38,39 +39,50 @@ public class User implements Serializable {
     //region Table columns
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
+    @Expose
     private Long id;
 
     @Column (name = "Role",
              nullable = false)
+    @Expose
     private Roles role;
 
     @Column(nullable = false,
             unique = true)
+    @Expose
     private String username;
     @Column(nullable = false,
             unique = true)
+    @Expose
     private String password;
 
     @Column(length = 100)
+    @Expose
     private String name;
     @Column(length = 350)
+    @Expose
     private String address;
     @Column(length = 10)
+    @Expose
     private String phoneNumber;
 
     @Column(nullable = false)
     @SerializedName("creationDate")
+    @Expose
     private Date createdOn;
 
     @Column(nullable = false,
             length = 5)
+    @Expose
     private String programStart;
     @Column(nullable = false,
             length = 5)
+    @Expose
     private String programEnd;
 
     @Column(nullable = false,
             columnDefinition = "boolean default false")
+    @Expose
     private boolean isOnline;
 
     public Roles getRole() {

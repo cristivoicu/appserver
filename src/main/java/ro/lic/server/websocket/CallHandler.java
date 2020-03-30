@@ -31,7 +31,7 @@ import static ro.lic.server.constants.JsonConstants.*;
 public class CallHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CallHandler.class);
-    private static final Gson gson = new GsonBuilder().setDateFormat("MMM dd, yyyy, h:mm:ss a").setPrettyPrinting().create();
+    private static final Gson gson = new GsonBuilder().setDateFormat("MMM dd, yyyy, h:mm:ss a").setPrettyPrinting().excludeFieldsWithoutExposeAnnotation().create();
 
     private final ConcurrentHashMap<String, RecordMediaPipeline> recordPipeline = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, PlayMediaPipeline> playPipelines = new ConcurrentHashMap<>();

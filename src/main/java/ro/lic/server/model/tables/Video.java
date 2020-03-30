@@ -1,6 +1,7 @@
 package ro.lic.server.model.tables;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.google.gson.annotations.Expose;
 
 import javax.persistence.*;
 import java.io.Serializable;
@@ -24,17 +25,22 @@ public class Video implements Serializable {
     //region Table contents
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
+    @Expose
     private Long id;
 
     @Column(unique = true,
         nullable = false)
+    @Expose
     private String name;
 
     @JsonIgnore
     @ManyToOne
-    private  transient User user;
+    @Expose(deserialize = false,
+            serialize = false)
+    private User user;
 
     @Column(nullable = false)
+    @Expose
     private Date date;
     //endregion
 

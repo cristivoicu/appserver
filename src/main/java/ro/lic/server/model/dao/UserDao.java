@@ -1,15 +1,12 @@
 package ro.lic.server.model.dao;
 
-import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Repository;
 import ro.lic.server.model.Roles;
 import ro.lic.server.model.tables.User;
-import ro.lic.server.websocket.utils.databasemodels.PasswordAndRole;
 
 import javax.transaction.Transactional;
 import java.util.List;
@@ -24,6 +21,10 @@ public interface UserDao extends CrudRepository<User, Long> {
     @Query(value = "UPDATE USERS u SET u.role = :role where u.username = :username", nativeQuery = true)
     int updateRole(@Param("username") String username,@Param("role") Roles role);
 
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE USERS u SET u.isOnline = :newStatus where u.username = :username", nativeQuery = true)
+    int updateStatus(@Param("username") String username, @Param("newStatus") boolean newStatus);
 
     @Query(value = "select role from users where username = :username", nativeQuery = true)
     Roles getUserRoleByUsername(@Param("username") String username);
