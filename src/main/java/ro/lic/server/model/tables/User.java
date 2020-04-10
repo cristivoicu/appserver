@@ -44,6 +44,7 @@ public class User implements Serializable {
 
     @Column (name = "Role",
              nullable = false)
+    @Enumerated(EnumType.ORDINAL)
     @Expose
     private Roles role;
 
@@ -53,7 +54,8 @@ public class User implements Serializable {
     private String username;
     @Column(nullable = false,
             unique = true)
-    @Expose
+    @Expose(serialize = false,
+            deserialize = true)
     private String password;
 
     @Column(length = 100)

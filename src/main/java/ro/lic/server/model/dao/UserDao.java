@@ -19,12 +19,31 @@ public interface UserDao extends CrudRepository<User, Long> {
     @Modifying
     @Transactional
     @Query(value = "UPDATE USERS u SET u.role = :role where u.username = :username", nativeQuery = true)
-    int updateRole(@Param("username") String username,@Param("role") Roles role);
+    int updateRole(@Param("username") String username, @Param("role") Roles role);
 
     @Modifying
     @Transactional
     @Query(value = "UPDATE USERS u SET u.isOnline = :newStatus where u.username = :username", nativeQuery = true)
     int updateStatus(@Param("username") String username, @Param("newStatus") boolean newStatus);
+
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE USERS u SET " +
+            "u.name = :name, " +
+            "u.phone_number = :phoneNumber, " +
+            "u.address = :address, " +
+            "u.program_start = :programStart, " +
+            "u.program_end = :programEnd, " +
+            "u.role = :role " +
+            " WHERE u.username = :username ",
+            nativeQuery = true)
+    int updateUser(@Param("username") String username,
+                   @Param("name") String name,
+                   @Param("phoneNumber") String phoneNumber,
+                   @Param("address") String address,
+                   @Param("programStart") String programStart,
+                   @Param("programEnd") String programEnd,
+                   @Param("role") Roles role);
 
     @Query(value = "select role from users where username = :username", nativeQuery = true)
     Roles getUserRoleByUsername(@Param("username") String username);
@@ -34,5 +53,8 @@ public interface UserDao extends CrudRepository<User, Long> {
 
     @Query(value = "select * from users where username = :username", nativeQuery = true)
     User getUserByUsername(@Param("username") String username);
+
+    @Query(value = "select * from users where role = :role", nativeQuery = true)
+    List<User> getAllUsersByRole(@Param("role") Roles role);
 
 }

@@ -10,6 +10,7 @@ import ro.lic.server.model.Roles;
 
 import java.io.IOException;
 
+/***/
 public class UserSession {
 
     private static final Logger log = LoggerFactory.getLogger(UserSession.class);

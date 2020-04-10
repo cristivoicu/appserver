@@ -1,12 +1,15 @@
 package ro.lic.server.model.repository;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.repository.query.Param;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
 import ro.lic.server.model.Roles;
 import ro.lic.server.model.dao.UserDao;
 import ro.lic.server.model.tables.User;
 
+import javax.annotation.Nonnull;
+import javax.management.relation.Role;
 import java.util.List;
 
 @Component
@@ -43,7 +46,21 @@ public class UserRepository {
         return userDao.findAll();
     }
 
+    public List<User> getAllUsersByRole(Roles role){
+        return userDao.getAllUsersByRole(role);
+    }
+
     public User getUser(String username){
         return userDao.getUserByUsername(username);
+    }
+
+    public int updateUser(@Nonnull User user){
+        return userDao.updateUser(user.getUsername(),
+                user.getName(),
+                user.getPhoneNumber(),
+                user.getAddress(),
+                user.getProgramStart(),
+                user.getProgramEnd(),
+                user.getRole());
     }
 }

@@ -10,11 +10,10 @@ package ro.lic.server.constants;
  */
 public class JsonConstants {
     // events
-    public static final String EVENT_CALL = "call";
     public static final String EVENT_ICE_CANDIDATE = "onIceCandidate";
-    public static final String EVENT_INCOMING_CALL_RESPONSE = "incomingCallResponse";
     public static final String EVENT_STOP = "stop";
-    public static final String EVENT_REGISTER = "register";
+
+    public static final String EVENT_UPDATE_USER = "updateUser";
 
     public static final String EVENT_LIVE_VIDEO = "liveVideo";
     /**
@@ -48,6 +47,7 @@ public class JsonConstants {
     public static final String SEND_ICE_FOR_PLAY = "play";
 
     // requests
+    public static final String REQ_TIMELINE = "requestTimeline";
     public static final String REQ_LIST_USERS = "listUsers";
     public static final String REQ_LIST_RECORDED_VIDEOS = "recordedVideos";
 }

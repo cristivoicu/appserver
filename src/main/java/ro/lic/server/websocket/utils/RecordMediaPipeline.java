@@ -18,9 +18,10 @@ public class RecordMediaPipeline {
 
     private final MediaPipeline mediaPipeline;
     private final WebRtcEndpoint recordingWebRtcEndpoint;
+    private final WebRtcEndpoint liveWatchWebRtcEndpoint;
     private final RecorderEndpoint recorderEndpoint;
 
-    private final Map<String, WebRtcEndpoint> subscribers; //outgoings
+    private final Map<String, WebRtcEndpoint> liveWatchers; //outgoings
 
     public RecordMediaPipeline(KurentoClient kurentoClient, String from) {
         // create recording path
@@ -29,6 +30,44 @@ public class RecordMediaPipeline {
         mediaPipeline = kurentoClient.createMediaPipeline();
         // create endpoints
         recordingWebRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
+        liveWatchWebRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
+        // setting the max bandwidth to 2.5 mbs (full hd capable)
+        recordingWebRtcEndpoint.setMaxVideoRecvBandwidth(2500, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("Set max video recv. bandwidth");
+            }
+
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("Failed to set max video recv band");
+            }
+        }); // unit kbps (set it to 2.5 mbs)
+        recordingWebRtcEndpoint.setMaxVideoSendBandwidth(2500, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("Set max video send bandwidth");
+            }
+
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("Failed to set max video recv. band");
+            }
+        });
+        recordingWebRtcEndpoint.setMaxAudioRecvBandwidth(500, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("Set max audio recv band");
+            }
+
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("Failed to set max audio recv band");
+                //todo change resolution on user!!
+            }
+        });
+        liveWatchWebRtcEndpoint.setMaxVideoRecvBandwidth(2500);
+        liveWatchWebRtcEndpoint.setMaxVideoSendBandwidth(2500);
         recorderEndpoint = new RecorderEndpoint.Builder(mediaPipeline, recordingPath)
                 .withMediaProfile(MediaProfileSpecType.WEBM)
                 .build();
@@ -56,9 +95,19 @@ public class RecordMediaPipeline {
 
         // connections
         recordingWebRtcEndpoint.connect(recorderEndpoint);
-        //webRtcEndpoint.connect(recorderEndpoint, MediaType.VIDEO);
+        recordingWebRtcEndpoint.connect(liveWatchWebRtcEndpoint, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("SUCC CON");
+            }
 
-        subscribers = new ConcurrentHashMap<>();
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("FAIL CON");
+            }
+        });
+
+        liveWatchers = new ConcurrentHashMap<>();
     }
 
     /**
@@ -66,11 +115,26 @@ public class RecordMediaPipeline {
      *
      * @param session is the subscriber user session
      */
-    public void addSubscriber(UserSession session) {
-        WebRtcEndpoint subscriberWebRtcEp = new WebRtcEndpoint.Builder(mediaPipeline).build();
-        recordingWebRtcEndpoint.connect(subscriberWebRtcEp);
-        subscriberWebRtcEp.connect(recorderEndpoint);
-        subscribers.put(session.getSessionId(), subscriberWebRtcEp);
+    public void addLiveWatcher(UserSession session) {
+/*        WebRtcEndpoint liveWatcherWebRtcEndPoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
+
+        liveWatcherWebRtcEndPoint.setMaxVideoSendBandwidth(2500);
+        liveWatcherWebRtcEndPoint.setMaxVideoRecvBandwidth(2500);
+
+        recordingWebRtcEndpoint.connect(liveWatcherWebRtcEndPoint, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("recording connected, success");
+            }
+
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("onError: failed to connect recording endpoint to live watcher.");
+            }
+        });
+
+
+        liveWatchers.put(session.getSessionId(), liveWatcherWebRtcEndPoint);*/
     }
 
     /**
@@ -79,14 +143,15 @@ public class RecordMediaPipeline {
      * @param session is the subscriber user session
      */
     public void unsubscribe(UserSession session) {
-        WebRtcEndpoint subscriberWebRtcEp = subscribers.get(session.getSessionId());
+        WebRtcEndpoint subscriberWebRtcEp = liveWatchers.get(session.getSessionId());
         recordingWebRtcEndpoint.disconnect(subscriberWebRtcEp);
 
-        subscribers.remove(session.getSessionId());
+        liveWatchers.remove(session.getSessionId());
     }
 
     public WebRtcEndpoint getWebRtcEpOfSubscriber(UserSession session){
-        return subscribers.get(session.getSessionId());
+        /*return liveWatchers.get(session.getSessionId());*/
+        return liveWatchWebRtcEndpoint;
     }
 
     public void record() {
@@ -98,7 +163,8 @@ public class RecordMediaPipeline {
     }
 
     public void addLiveCandidate(IceCandidate iceCandidate, UserSession user){
-        subscribers.get(user.getSessionId()).addIceCandidate(iceCandidate);
+        /*liveWatchers.get(user.getSessionId()).addIceCandidate(iceCandidate);*/
+        liveWatchWebRtcEndpoint.addIceCandidate(iceCandidate);
     }
 
     public void addCandidate(IceCandidate iceCandidate) {
@@ -106,9 +172,8 @@ public class RecordMediaPipeline {
     }
 
     public void release() {
-        recordingWebRtcEndpoint.release();
         recorderEndpoint.stopAndWait();
-        recorderEndpoint.stop();
+        recordingWebRtcEndpoint.release();
         recorderEndpoint.release();
         mediaPipeline.release();
 

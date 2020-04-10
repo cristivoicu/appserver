@@ -90,11 +90,15 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
             username = username.substring(username.indexOf("[") + 1, username.indexOf("]"));
             password = password.substring(password.indexOf("[") + 1, password.indexOf("]"));
 
+           System.out.println(String.format("User %s is trying to connect", username));
+
             role = userDao.authenticate(username, password);
 
             if (role != null) {
+                System.out.println("AUTH");
                 return true;
             } else {
+                System.out.println("ERROR");
                 serverHttpResponse.setStatusCode(HttpStatus.UNAUTHORIZED);
                 return false;
             }

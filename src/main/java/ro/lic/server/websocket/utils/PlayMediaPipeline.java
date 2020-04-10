@@ -39,6 +39,7 @@ import static ro.lic.server.constants.Constants.*;
 public class PlayMediaPipeline {
 
     private static final Logger log = LoggerFactory.getLogger(PlayMediaPipeline.class);
+    private boolean isStreamEnded = false;
 
     private final MediaPipeline pipeline;
     private WebRtcEndpoint webRtc;
@@ -50,24 +51,49 @@ public class PlayMediaPipeline {
 
         // Media Elements (WebRtcEndpoint, PlayerEndpoint)
         webRtc = new WebRtcEndpoint.Builder(pipeline).build();
+        webRtc.setMaxVideoRecvBandwidth(2500, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("Set max video recv band");
+            }
+
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("Failed to set max video recv band");
+            }
+        }); // unit kbps (set it to 2.5 mbs)
+        webRtc.setMaxVideoSendBandwidth(2500, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("Set max video recv band");
+            }
+
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("Failed to set max video recv band");
+            }
+        });
+        webRtc.setMaxAudioRecvBandwidth(500, new Continuation<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) throws Exception {
+                System.out.println("Set max audio recv band");
+            }
+
+            @Override
+            public void onError(Throwable throwable) throws Exception {
+                System.out.println("Failed to set max audio recv band");
+            }
+        });
         //player = new PlayerEndpoint.Builder(pipeline, RECORDING_PATH + user + RECORDING_EXT).build();
         player = new PlayerEndpoint.Builder(pipeline, path).build();
 
         // Connection
         player.connect(webRtc);
-
-        // Player listeners
-        /*player.addErrorListener(new EventListener<ErrorEvent>() {
-            @Override
-            public void onEvent(ErrorEvent event) {
-                log.info("ErrorEvent: {}", event.getDescription());
-                sendPlayEnd(session);
-            }
-        });*/
     }
 
     public void sendPlayEnd(WebSocketSession session) {
         try {
+            isStreamEnded = true;
             JsonObject response = new JsonObject();
             response.addProperty("id", "playEnd");
             session.sendMessage(new TextMessage(response.toString()));
@@ -114,4 +140,7 @@ public class PlayMediaPipeline {
         return player;
     }
 
+    public boolean isStreamEnded() {
+        return isStreamEnded;
+    }
 }

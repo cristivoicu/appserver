@@ -1,6 +1,7 @@
 package ro.lic.server.websocket.security;
 
 import ro.lic.server.model.Roles;
+import ro.lic.server.model.tables.User;
 import ro.lic.server.websocket.utils.UserSession;
 
 /**
@@ -27,6 +28,14 @@ public class Authoriser {
     }
 
     public static boolean authoriseListUsers(UserSession session){
+        return session.getRole() == Roles.ADMIN;
+    }
+
+    public static boolean authoriseListTimeline(UserSession session){
+        return session.getRole() == Roles.ADMIN;
+    }
+
+    public static boolean authoriseEditUser(UserSession session) {
         return session.getRole() == Roles.ADMIN;
     }
 }
