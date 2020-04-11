@@ -1,7 +1,6 @@
 package ro.lic.server.websocket.security;
 
-import ro.lic.server.model.Roles;
-import ro.lic.server.model.tables.User;
+import ro.lic.server.model.Role;
 import ro.lic.server.websocket.utils.UserSession;
 
 /**
@@ -16,26 +15,26 @@ import ro.lic.server.websocket.utils.UserSession;
  */
 public class Authoriser {
     public static boolean authoriseEnroll(UserSession session) {
-        return session.getRole() == Roles.ADMIN;
+        return session.getRole() == Role.ADMIN;
     }
 
     public static boolean authorisePlayVideo(UserSession session) {
-        return session.getRole() == Roles.ADMIN;
+        return session.getRole() == Role.ADMIN;
     }
 
     public static boolean authoriseListRecordedVideos(UserSession session){
-        return session.getRole() == Roles.ADMIN;
+        return session.getRole() == Role.ADMIN;
     }
 
     public static boolean authoriseListUsers(UserSession session){
-        return session.getRole() == Roles.ADMIN;
+        return session.getRole() == Role.ADMIN;
     }
 
     public static boolean authoriseListTimeline(UserSession session){
-        return session.getRole() == Roles.ADMIN;
+        return session.getRole() == Role.ADMIN;
     }
 
     public static boolean authoriseEditUser(UserSession session) {
-        return session.getRole() == Roles.ADMIN;
+        return session.getRole() == Role.ADMIN;
     }
 }

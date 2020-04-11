@@ -1,15 +1,14 @@
 package ro.lic.server.model.repository;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.repository.query.Param;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
-import ro.lic.server.model.Roles;
+import ro.lic.server.model.Role;
+import ro.lic.server.model.Status;
 import ro.lic.server.model.dao.UserDao;
 import ro.lic.server.model.tables.User;
 
 import javax.annotation.Nonnull;
-import javax.management.relation.Role;
 import java.util.List;
 
 @Component
@@ -21,24 +20,24 @@ public class UserRepository {
         userDao.save(user);
     }
 
-    public void updateRole(User user, Roles newRole) {
-        userDao.updateRole(user.getUsername(), newRole);
+    public void updateRole(User user, Role newRole) {
+        userDao.updateRole(user.getUsername(), newRole.name());
     }
 
-    public void updateRole(String userName, Roles newRole) {
-        userDao.updateRole(userName, newRole);
+    public void updateRole(String userName, Role newRole) {
+        userDao.updateRole(userName, newRole.name());
     }
 
-    public Roles authenticate(String username, String password){
+    public Role authenticate(String username, String password){
         User user = userDao.getUserByUsername(username);
         if(user == null)
             return null;
         String hashPassword = user.getPassword();
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
-        return encoder.matches(password, hashPassword) ? user.getRole() : null;
+        return encoder.matches(password, hashPassword) ? Role.valueOf(user.getRole()) : null;
     }
 
-    public Roles getUserRoleByUsername(String username){
+    public Role getUserRoleByUsername(String username){
         return userDao.getUserRoleByUsername(username);
     }
 
@@ -46,7 +45,7 @@ public class UserRepository {
         return userDao.findAll();
     }
 
-    public List<User> getAllUsersByRole(Roles role){
+    public List<User> getAllUsersByRole(Role role){
         return userDao.getAllUsersByRole(role);
     }
 
@@ -62,5 +61,17 @@ public class UserRepository {
                 user.getProgramStart(),
                 user.getProgramEnd(),
                 user.getRole());
+    }
+
+    public void setUserOnline(String username){
+        userDao.updateOnlineStatus(username, Status.ONLINE.name());
+    }
+
+    public void setUserOffline(String username){
+        userDao.updateOnlineStatus(username, Status.OFFLINE.name());
+    }
+
+    public void disableUser(String username){
+        userDao.updateOnlineStatus(username, Status.DISABLED.name());
     }
 }

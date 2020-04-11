@@ -6,7 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
-import ro.lic.server.model.Roles;
+import ro.lic.server.model.Role;
 
 import java.io.IOException;
 
@@ -17,18 +17,18 @@ public class UserSession {
 
     private final String username;
     private final WebSocketSession session;
-    private final Roles role;
+    private final Role role;
 
     private RecordMediaPipeline recordMediaPipeline = null;
 
-    public UserSession(WebSocketSession session, String name, Roles role) {
+    public UserSession(WebSocketSession session, String name, Role role) {
         this.session = session;
         this.username = name;
         this.role = role;
 
     }
 
-    public Roles getRole() {
+    public Role getRole() {
         return role;
     }
 

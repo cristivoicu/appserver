@@ -1,14 +1,14 @@
 package ro.lic.server.websocket;
 
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.kurento.client.KurentoClient;
+import org.kurento.jsonrpc.client.JsonRpcClientWebSocket;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
-import org.springframework.security.crypto.bcrypt.BCrypt;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -16,18 +16,16 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.socket.server.standard.ServerEndpointExporter;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
-import ro.lic.server.model.Roles;
+import ro.lic.server.model.Role;
 import ro.lic.server.model.repository.UserRepository;
-import ro.lic.server.model.tables.User;
 import ro.lic.server.websocket.utils.UserRegistry;
+
 
 import java.io.IOException;
 import java.security.Principal;
-import java.util.Date;
 import java.util.Map;
 
-import static ro.lic.server.constants.Constants.KMS_WS_URI_DEFAULT;
-import static ro.lic.server.constants.Constants.KMS_WS_URI_PROP;
+import static ro.lic.server.constants.Constants.*;
 
 @Configuration
 @EnableWebSocket
@@ -47,7 +45,15 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
 
     @Bean
     public KurentoClient kurentoClient() {
-        return KurentoClient.create(System.getProperty(KMS_WS_URI_PROP, KMS_WS_URI_DEFAULT));
+        KurentoClient kurentoClient;
+
+        SslContextFactory sec = new SslContextFactory(true);
+        sec.setValidateCerts(true);
+        JsonRpcClientWebSocket rpcClient = new JsonRpcClientWebSocket(KMS_WS_URI_DEFAULT, sec);
+        kurentoClient = KurentoClient.createFromJsonRpcClient(rpcClient);
+
+        //return KurentoClient.create(System.getProperty(KMS_WS_URI_PROP, KMS_WS_URI_DEFAULT));
+        return kurentoClient;
     }
 
     @Override
@@ -65,7 +71,7 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
 
     private class HandShake implements HandshakeInterceptor {
 
-        private Roles role = null;
+        private Role role = null;
 
         @Override
         public boolean beforeHandshake(ServerHttpRequest serverHttpRequest,
@@ -96,6 +102,7 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
 
             if (role != null) {
                 System.out.println("AUTH");
+                userDao.setUserOnline(username);
                 return true;
             } else {
                 System.out.println("ERROR");

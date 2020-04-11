@@ -5,7 +5,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import ro.lic.server.model.Roles;
+import ro.lic.server.model.Role;
+import ro.lic.server.model.Status;
 import ro.lic.server.model.tables.User;
 
 import javax.transaction.Transactional;
@@ -19,12 +20,12 @@ public interface UserDao extends CrudRepository<User, Long> {
     @Modifying
     @Transactional
     @Query(value = "UPDATE USERS u SET u.role = :role where u.username = :username", nativeQuery = true)
-    int updateRole(@Param("username") String username, @Param("role") Roles role);
+    int updateRole(@Param("username") String username, @Param("role") String role);
 
     @Modifying
     @Transactional
-    @Query(value = "UPDATE USERS u SET u.isOnline = :newStatus where u.username = :username", nativeQuery = true)
-    int updateStatus(@Param("username") String username, @Param("newStatus") boolean newStatus);
+    @Query(value = "UPDATE USERS u SET u.status = :newStatus where u.username = :username", nativeQuery = true)
+    int updateOnlineStatus(@Param("username") String username, @Param("newStatus") String newStatus);
 
     @Modifying
     @Transactional
@@ -43,10 +44,10 @@ public interface UserDao extends CrudRepository<User, Long> {
                    @Param("address") String address,
                    @Param("programStart") String programStart,
                    @Param("programEnd") String programEnd,
-                   @Param("role") Roles role);
+                   @Param("role") String role);
 
     @Query(value = "select role from users where username = :username", nativeQuery = true)
-    Roles getUserRoleByUsername(@Param("username") String username);
+    Role getUserRoleByUsername(@Param("username") String username);
 
     @Query(value = "select password from users where username = :username", nativeQuery = true)
     String getUserPasswordByUsername(@Param("username") String username);
@@ -55,6 +56,6 @@ public interface UserDao extends CrudRepository<User, Long> {
     User getUserByUsername(@Param("username") String username);
 
     @Query(value = "select * from users where role = :role", nativeQuery = true)
-    List<User> getAllUsersByRole(@Param("role") Roles role);
+    List<User> getAllUsersByRole(@Param("role") Role role);
 
 }

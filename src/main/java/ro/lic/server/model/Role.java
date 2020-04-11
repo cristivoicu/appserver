@@ -33,7 +33,7 @@ package ro.lic.server.model;
  *
  * @author Cristian VOICU
  */
-public enum Roles {
+public enum Role {
     ADMIN,
     PRIVILEGED_I,
     PRIVILEGED_II,

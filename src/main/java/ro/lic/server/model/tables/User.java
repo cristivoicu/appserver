@@ -4,13 +4,12 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
-import org.springframework.stereotype.Component;
-import ro.lic.server.model.Roles;
+import ro.lic.server.model.Role;
+import ro.lic.server.model.Status;
 
 import javax.persistence.*;
 import java.io.Serializable;
-import java.sql.Time;
-import  java.util.Date;
+import java.util.Date;
 
 /***/
 @Entity
@@ -18,12 +17,12 @@ import  java.util.Date;
 public class User implements Serializable {
 
     //region Constructors
-    protected User(){
+    protected User() {
 
     }
 
-    public User(Roles role, String username, String password, String name, String address, String phoneNumber, Date createdOn, String programStart, String programEnd) {
-        this.role = role;
+    public User(Role role, String username, String password, String name, String address, String phoneNumber, Date createdOn, String programStart, String programEnd) {
+        this.role = role.name();
         this.username = username;
         this.password = password;
         this.name = name;
@@ -32,7 +31,7 @@ public class User implements Serializable {
         this.createdOn = createdOn;
         this.programStart = programStart;
         this.programEnd = programEnd;
-        isOnline = false;
+        status = Status.OFFLINE.name();
     }
     //endregion
 
@@ -42,11 +41,10 @@ public class User implements Serializable {
     @Expose
     private Long id;
 
-    @Column (name = "Role",
-             nullable = false)
-    @Enumerated(EnumType.ORDINAL)
+    @Column(name = "Role",
+            nullable = false)
     @Expose
-    private Roles role;
+    private String role;
 
     @Column(nullable = false,
             unique = true)
@@ -82,17 +80,14 @@ public class User implements Serializable {
     @Expose
     private String programEnd;
 
-    @Column(nullable = false,
-            columnDefinition = "boolean default false")
+    @Column(nullable = false)
     @Expose
-    private boolean isOnline;
+    private String status;
 
-    public Roles getRole() {
-        return role;
-    }
+
     //endregion
 
-    public static User fromJson(String json){
+    public static User fromJson(String json) {
         Gson gson = new GsonBuilder().setPrettyPrinting().create();
         return gson.fromJson(json, User.class);
     }
@@ -102,7 +97,11 @@ public class User implements Serializable {
         return id;
     }
 
-    public void setRole(Roles role) {
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
         this.role = role;
     }
 
@@ -170,12 +169,12 @@ public class User implements Serializable {
         this.programEnd = programEnd;
     }
 
-    public boolean isOnline() {
-        return isOnline;
+    public String isOnline() {
+        return status;
     }
 
-    public void setOnline(boolean online) {
-        isOnline = online;
+    public void setOnline(String status) {
+        this.status = status;
     }
 
     //endregion

@@ -65,9 +65,28 @@
             <artifactId>gson</artifactId>
             <version>2.8.5</version>
         </dependency>
+
+        <!-- KURENTO -->
         <dependency>
             <groupId>org.kurento</groupId>
             <artifactId>kurento-client</artifactId>
+            <version>6.13.0</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.kurento/kurento-jsonrpc-client -->
+        <dependency>
+            <groupId>org.kurento</groupId>
+            <artifactId>kurento-jsonrpc-client</artifactId>
+            <version>6.13.0</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.kurento/kurento-commons -->
+        <dependency>
+            <groupId>org.kurento</groupId>
+            <artifactId>kurento-commons</artifactId>
+            <version>6.13.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.kurento</groupId>
+            <artifactId>kurento-jsonrpc-client-jetty</artifactId>
             <version>6.13.0</version>
         </dependency>
 

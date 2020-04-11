@@ -1,18 +1,18 @@
 package ro.lic.server.websocket.utils.databasemodels;
 
-import ro.lic.server.model.Roles;
+import ro.lic.server.model.Role;
 
 import java.io.Serializable;
 
 public class PasswordAndRole implements Serializable {
     private String password;
-    private Roles role;
+    private Role role;
 
     protected PasswordAndRole(){
 
     }
 
-    public PasswordAndRole(String password, Roles role) {
+    public PasswordAndRole(String password, Role role) {
         this.password = password;
         this.role = role;
     }
@@ -21,7 +21,7 @@ public class PasswordAndRole implements Serializable {
         return password;
     }
 
-    public Roles getRole() {
+    public Role getRole() {
         return role;
     }
 }

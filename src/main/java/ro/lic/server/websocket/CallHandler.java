@@ -13,7 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
-import ro.lic.server.model.Roles;
+import ro.lic.server.model.Role;
 import ro.lic.server.model.repository.ActionRepository;
 import ro.lic.server.model.repository.UserRepository;
 import ro.lic.server.model.repository.VideoRepository;
@@ -59,7 +59,7 @@ public class CallHandler extends TextWebSocketHandler {
 
         User user = userRepository.getUser(name);
         actionRepository.userLogout(user);
-
+        userRepository.setUserOffline(user.getUsername());
         stop(session);
         registry.removeBySession(session);
         System.out.println(String.format("User %s disconnected!", name));
@@ -574,7 +574,7 @@ public class CallHandler extends TextWebSocketHandler {
     }
 
     private void getAllUsersWithUserRole(final WebSocketSession session) throws IOException {
-        List<User> users = userRepository.getAllUsersByRole(Roles.USER);
+        List<User> users = userRepository.getAllUsersByRole(Role.USER);
 
         JsonObject response = new JsonObject();
         response.addProperty("id", "list_users_response_USER");
@@ -616,7 +616,7 @@ public class CallHandler extends TextWebSocketHandler {
 
     /**
      * Sends the list of recorded videos by certain user. This request can be made only by a user who has admin role.
-     * {@link Roles}
+     * {@link Role}
      *
      * @param userSession is the user that requested the list
      * @param message     is the message received from user by application server
@@ -697,7 +697,7 @@ public class CallHandler extends TextWebSocketHandler {
      *
      * @param session     is the session implied in the process, it should be an ADMIN
      * @param jsonMessage is the message from the client with user data
-     * @see Roles
+     * @see Role
      */
     private void enroll(final WebSocketSession session, JsonObject jsonMessage) throws IOException {
         String userJson = jsonMessage.get("user").getAsString();
