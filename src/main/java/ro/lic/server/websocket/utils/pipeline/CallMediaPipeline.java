@@ -1,4 +1,4 @@
-package ro.lic.server.websocket.utils;
+package ro.lic.server.websocket.utils.pipeline;
 
 import org.kurento.client.KurentoClient;
 import org.kurento.client.MediaPipeline;

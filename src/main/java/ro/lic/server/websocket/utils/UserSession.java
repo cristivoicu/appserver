@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import ro.lic.server.model.Role;
+import ro.lic.server.websocket.utils.pipeline.RecordMediaPipeline;
 
 import java.io.IOException;
 

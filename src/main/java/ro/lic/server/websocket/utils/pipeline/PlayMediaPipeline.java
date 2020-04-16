@@ -15,7 +15,7 @@
  *
  */
 
-package ro.lic.server.websocket.utils;
+package ro.lic.server.websocket.utils.pipeline;
 
 import com.google.gson.JsonObject;
 import org.kurento.client.*;
@@ -25,8 +25,6 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
-
-import static ro.lic.server.constants.Constants.*;
 
 
 /**
@@ -95,8 +93,12 @@ public class PlayMediaPipeline {
         try {
             isStreamEnded = true;
             JsonObject response = new JsonObject();
-            response.addProperty("id", "playEnd");
-            session.sendMessage(new TextMessage(response.toString()));
+            response.addProperty("method", "media");
+            response.addProperty("event", "playbackEnd");
+
+            synchronized (session) {
+                session.sendMessage(new TextMessage(response.toString()));
+            }
         } catch (IOException e) {
             log.error("Error sending playEndOfStream message", e);
         }

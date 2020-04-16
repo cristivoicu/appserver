@@ -37,8 +37,13 @@ public class ActionRepository {
         actionDao.save(action);
     }
 
-    public void userEnrolledUser(User user){
+    public void onEnrolledUser(User user){
         Action action = new Action("User enrolled a new user in application.", new Date(), user);
+        actionDao.save(action);
+    }
+
+    public void onDisabledUser(User user, String username){
+        Action action = new Action(String.format("Disabled %s acount", username), new Date(), user);
         actionDao.save(action);
     }
 

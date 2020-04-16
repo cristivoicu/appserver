@@ -72,18 +72,7 @@
             <artifactId>kurento-client</artifactId>
             <version>6.13.0</version>
         </dependency>
-        <!-- https://mvnrepository.com/artifact/org.kurento/kurento-jsonrpc-client -->
-        <dependency>
-            <groupId>org.kurento</groupId>
-            <artifactId>kurento-jsonrpc-client</artifactId>
-            <version>6.13.0</version>
-        </dependency>
-        <!-- https://mvnrepository.com/artifact/org.kurento/kurento-commons -->
-        <dependency>
-            <groupId>org.kurento</groupId>
-            <artifactId>kurento-commons</artifactId>
-            <version>6.13.0</version>
-        </dependency>
+
         <dependency>
             <groupId>org.kurento</groupId>
             <artifactId>kurento-jsonrpc-client-jetty</artifactId>
@@ -98,11 +87,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
-        <!--<dependency>
-            <groupId>org.springframework.data</groupId>
-            <artifactId>spring-data-jpa</artifactId>
-            <version>2.1.6.RELEASE</version>
-        </dependency>-->
+
 
     </dependencies>
     <build>

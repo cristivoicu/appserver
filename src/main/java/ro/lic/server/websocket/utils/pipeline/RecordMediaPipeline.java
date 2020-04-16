@@ -1,6 +1,7 @@
-package ro.lic.server.websocket.utils;
+package ro.lic.server.websocket.utils.pipeline;
 
 import org.kurento.client.*;
+import ro.lic.server.websocket.utils.UserSession;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -28,11 +29,12 @@ public class RecordMediaPipeline {
         recordingPath = String.format("file:///home/kurento/UsersVideos/%s__%s%s", dateFormat.format(new Date()), from, RECORDING_EXT_WEBM);
         // create media pipeline
         mediaPipeline = kurentoClient.createMediaPipeline();
+
         // create endpoints
         recordingWebRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
         liveWatchWebRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
         // setting the max bandwidth to 2.5 mbs (full hd capable)
-        recordingWebRtcEndpoint.setMaxVideoRecvBandwidth(2500, new Continuation<Void>() {
+        recordingWebRtcEndpoint.setMaxVideoRecvBandwidth(3000, new Continuation<Void>() {
             @Override
             public void onSuccess(Void aVoid) throws Exception {
                 System.out.println("Set max video recv. bandwidth");
@@ -43,7 +45,7 @@ public class RecordMediaPipeline {
                 System.out.println("Failed to set max video recv band");
             }
         }); // unit kbps (set it to 2.5 mbs)
-        recordingWebRtcEndpoint.setMaxVideoSendBandwidth(2500, new Continuation<Void>() {
+        recordingWebRtcEndpoint.setMaxVideoSendBandwidth(3000, new Continuation<Void>() {
             @Override
             public void onSuccess(Void aVoid) throws Exception {
                 System.out.println("Set max video send bandwidth");
@@ -54,7 +56,7 @@ public class RecordMediaPipeline {
                 System.out.println("Failed to set max video recv. band");
             }
         });
-        recordingWebRtcEndpoint.setMaxAudioRecvBandwidth(500, new Continuation<Void>() {
+        recordingWebRtcEndpoint.setMaxAudioRecvBandwidth(520, new Continuation<Void>() {
             @Override
             public void onSuccess(Void aVoid) throws Exception {
                 System.out.println("Set max audio recv band");
@@ -66,8 +68,10 @@ public class RecordMediaPipeline {
                 //todo change resolution on user!!
             }
         });
+
         liveWatchWebRtcEndpoint.setMaxVideoRecvBandwidth(2500);
         liveWatchWebRtcEndpoint.setMaxVideoSendBandwidth(2500);
+
         recorderEndpoint = new RecorderEndpoint.Builder(mediaPipeline, recordingPath)
                 .withMediaProfile(MediaProfileSpecType.WEBM)
                 .build();
@@ -95,17 +99,7 @@ public class RecordMediaPipeline {
 
         // connections
         recordingWebRtcEndpoint.connect(recorderEndpoint);
-        recordingWebRtcEndpoint.connect(liveWatchWebRtcEndpoint, new Continuation<Void>() {
-            @Override
-            public void onSuccess(Void aVoid) throws Exception {
-                System.out.println("SUCC CON");
-            }
-
-            @Override
-            public void onError(Throwable throwable) throws Exception {
-                System.out.println("FAIL CON");
-            }
-        });
+        recordingWebRtcEndpoint.connect(liveWatchWebRtcEndpoint);
 
         liveWatchers = new ConcurrentHashMap<>();
     }

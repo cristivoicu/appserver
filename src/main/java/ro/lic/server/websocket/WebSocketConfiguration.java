@@ -30,12 +30,13 @@ import static ro.lic.server.constants.Constants.*;
 @Configuration
 @EnableWebSocket
 public class WebSocketConfiguration implements WebSocketConfigurer {
+
     @Autowired
     private UserRepository userDao;
 
     @Bean
-    public CallHandler callHandler() {
-        return new CallHandler();
+    public EndPointHandler callHandler() {
+        return new EndPointHandler();
     }
 
     @Bean
