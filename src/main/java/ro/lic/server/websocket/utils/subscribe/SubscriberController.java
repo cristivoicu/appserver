@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import org.springframework.stereotype.Component;
+import ro.lic.server.model.Status;
 import ro.lic.server.model.tables.User;
 import ro.lic.server.websocket.utils.UserSession;
 
@@ -25,13 +26,7 @@ public class SubscriberController {
         userListListener.remove(session);
     }
 
-    public void notifySubscribers(User modifiedUser){
-        JsonObject message = new JsonObject();
-
-        message.addProperty("method", "subscribe");
-        message.addProperty("event", "userUpdated");
-        message.addProperty("payload", gson.toJson(modifiedUser));
-
+    private void notifySubscribers(JsonObject message){
         for(UserSession session : userListListener){
             synchronized (session.getSession()){
                 try {
@@ -41,5 +36,26 @@ public class SubscriberController {
                 }
             }
         }
+    }
+
+    public void notifySubscribersOnUserModified(User modifiedUser){
+        JsonObject message = new JsonObject();
+
+        message.addProperty("method", "subscribe");
+        message.addProperty("event", "userUpdated");
+        message.addProperty("payload", gson.toJson(modifiedUser));
+
+        notifySubscribers(message);
+    }
+
+    public void notifySubscribersOnUserStatusModified(Status status, String username){
+        JsonObject message = new JsonObject();
+
+        message.addProperty("method", "subscribe");
+        message.addProperty("event", "userStatus");
+        message.addProperty("status", status.name());
+        message.addProperty("username", username);
+
+        notifySubscribers(message);
     }
 }

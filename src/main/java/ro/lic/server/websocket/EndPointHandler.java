@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import ro.lic.server.model.Status;
 import ro.lic.server.model.repository.ActionRepository;
 import ro.lic.server.model.repository.UserRepository;
 import ro.lic.server.model.repository.VideoRepository;
@@ -65,6 +66,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         User user = userRepository.getUser(name);
         actionRepository.userLogout(user);
         userRepository.setUserOffline(user.getUsername());
+        subscriberController.notifySubscribersOnUserStatusModified(Status.OFFLINE, user.getUsername());
         stop(session);
         registry.removeBySession(session);
         System.out.println(String.format("User %s disconnected!", name));
@@ -80,9 +82,6 @@ public class EndPointHandler extends TextWebSocketHandler {
         String username = session.getPrincipal().getName();
         username = username.substring(username.indexOf("[") + 1, username.indexOf("]"));
 
-        User user = userRepository.getUser(username);
-        actionRepository.userLogin(user);
-
         // check if user is already connected
         if (registry.exists(username)) {
             session.close(CloseStatus.SERVER_ERROR);
@@ -91,6 +90,10 @@ public class EndPointHandler extends TextWebSocketHandler {
             System.out.println(String.format("User %s connected!", username));
             UserSession userSession = new UserSession(session, username, userRepository.getUserRoleByUsername(username));
             registry.register(userSession);
+
+            User user = userRepository.getUser(username);
+            actionRepository.userLogin(user);
+            subscriberController.notifySubscribersOnUserStatusModified(Status.ONLINE, username);
         }
     }
 
@@ -118,7 +121,10 @@ public class EndPointHandler extends TextWebSocketHandler {
                     handleMediaMethodMessage(user, receivedMessage);
                     break;
                 case "subscribe":
-
+                    handleSubscribeMethodMessage(user, receivedMessage);
+                    break;
+                case "unsubscribe":
+                    handleUnsubscribeMethodMessage(user, receivedMessage);
                     break;
                 default:
 
@@ -128,6 +134,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             System.out.println("!!! JSON FROM CLIENT ERROR: " + e.getMessage());
         }
     }
+
     //region Update method message
     private void handleUpdateMethodMessage(JsonObject receivedMessage, UserSession session) throws IOException {
         switch (receivedMessage.get("event").getAsString()) {
@@ -193,7 +200,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("event", "updateUser");
             if (i != 0) {
                 response.addProperty("response", "success");
-                subscriberController.notifySubscribers(userTarget);
+                subscriberController.notifySubscribersOnUserModified(userTarget);
             }
             else
                 response.addProperty("response", "fail");
@@ -206,18 +213,20 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     /***/
     private void handleDisableUserEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
-        String userTargetUsername = receivedMessage.get("user").getAsString();
+        String userTargetUsername = receivedMessage.get("payload").getAsString();
 
         User admin = userRepository.getUser(userSession.getUsername());
         actionRepository.onDisabledUser(admin, userTargetUsername);
         userRepository.disableUser(userTargetUsername);
         System.out.println(String.format("Disabled account %s by %s", userTargetUsername, admin.getUsername()));
 
+        subscriberController.notifySubscribersOnUserStatusModified(Status.DISABLED, userTargetUsername);
+
         JsonObject response = new JsonObject();
 
-        receivedMessage.addProperty("method", "update");
-        receivedMessage.addProperty("event", "disableUser");
-        receivedMessage.addProperty("response", "success");
+        response.addProperty("method", "update");
+        response.addProperty("event", "disableUser");
+        response.addProperty("response", "success");
 
         synchronized (userSession) {
             userSession.sendMessage(response);
@@ -347,6 +356,9 @@ public class EndPointHandler extends TextWebSocketHandler {
                 break;
             case "stopVideoStreamRequest":
                 handleStopVideoSteramRequestEvent(userSession, receivedMessage);
+                break;
+            case "startLiveVideoWatch":
+
                 break;
             default:
 
@@ -728,18 +740,21 @@ public class EndPointHandler extends TextWebSocketHandler {
     //endregion
     //endregion
 
-
+    /***/
     private void handleSubscribeMethodMessage(UserSession session, JsonObject receivedMessage){
         switch (receivedMessage.get("event").getAsString()){
-            case "userList":
-                handleSubscribeMethodMessage(session, receivedMessage);
+            case "userUpdated":
+                subscriberController.addUserListListener(session);
             default:
 
         }
     }
 
-    private void handleUserListSubscribeEvent(UserSession userSession, JsonObject receivedMessage){
-
+    private void handleUnsubscribeMethodMessage(UserSession session, JsonObject receivedMessage){
+        switch (receivedMessage.get("event").getAsString()){
+            case "userList":
+                subscriberController.removeUserListListener(session);
+        }
     }
 
     //region Live video handlers
