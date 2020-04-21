@@ -69,8 +69,8 @@ public class RecordMediaPipeline {
             }
         });
 
-        liveWatchWebRtcEndpoint.setMaxVideoRecvBandwidth(2500);
-        liveWatchWebRtcEndpoint.setMaxVideoSendBandwidth(2500);
+        liveWatchWebRtcEndpoint.setMaxVideoRecvBandwidth(3000);
+        liveWatchWebRtcEndpoint.setMaxVideoSendBandwidth(3000);
 
         recorderEndpoint = new RecorderEndpoint.Builder(mediaPipeline, recordingPath)
                 .withMediaProfile(MediaProfileSpecType.WEBM)

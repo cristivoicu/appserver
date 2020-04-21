@@ -14,6 +14,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import ro.lic.server.model.Status;
+import ro.lic.server.model.location.UserLocation;
 import ro.lic.server.model.repository.ActionRepository;
 import ro.lic.server.model.repository.UserRepository;
 import ro.lic.server.model.repository.VideoRepository;
@@ -30,6 +31,7 @@ import java.io.IOException;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.DoubleAccumulator;
 
 import static ro.lic.server.constants.JsonConstants.*;
 
@@ -40,6 +42,9 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     private final ConcurrentHashMap<String, RecordMediaPipeline> recordPipeline = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, PlayMediaPipeline> playPipelines = new ConcurrentHashMap<>();
+
+    /** key is username*/
+    private final ConcurrentHashMap<String, UserLocation> userLocations = new ConcurrentHashMap<>();
 
     @Autowired
     private UserRepository userRepository;
@@ -58,6 +63,8 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     @Autowired
     private SubscriberController subscriberController;
+
+
 
     @Override
     public void afterConnectionClosed(final WebSocketSession session, CloseStatus status) throws Exception {
@@ -151,6 +158,9 @@ public class EndPointHandler extends TextWebSocketHandler {
                 break;
             case "mapItems":
                 break;
+            case "location":
+                handleLocationEvent(session, receivedMessage);
+                break;
             default:
 
         }
@@ -164,6 +174,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             if (userJson != null) {
                 User userModel = User.fromJson(userJson);
                 //encode password
+                userModel.setStatus(Status.OFFLINE.name());
 
                 User user = userRepository.getUser(userSession.getUsername());
                 actionRepository.onEnrolledUser(user);
@@ -239,6 +250,14 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     private void handleMapItemEvent(UserSession userSession, JsonObject receivedMessage) {
 
+    }
+
+    private void handleLocationEvent(UserSession userSession, JsonObject receivedMessage) {
+        Double lat = receivedMessage.get("payload").getAsJsonObject().get("lat").getAsDouble();
+        Double lng = receivedMessage.get("payload").getAsJsonObject().get("lng").getAsDouble();
+
+        userLocations.put(userSession.getUsername(), new UserLocation(lat, lng));
+        System.out.println(String.format("User %s, updated location lat: %f; lng: %f", userSession.getUsername(), lat, lng));
     }
     //endregion
 
@@ -358,7 +377,7 @@ public class EndPointHandler extends TextWebSocketHandler {
                 handleStopVideoSteramRequestEvent(userSession, receivedMessage);
                 break;
             case "startLiveVideoWatch":
-
+                handleLiveVideoWatchRequestEvent(userSession, receivedMessage);
                 break;
             default:
 
@@ -738,6 +757,52 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     //endregion
+
+    private void handleLiveVideoWatchRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
+        UserSession userRecording = registry.getByName("voicu.cristian");
+        RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getSessionId());
+
+        recordMediaPipeline.addLiveWatcher(session);
+        session.setRecordMediaPipeline(recordMediaPipeline);
+
+        // sdp negotiation
+        String sdpOffer = receivedMessage.get("sdpOffer").getAsString();
+        String sdpAnswer = recordMediaPipeline.getWebRtcEpOfSubscriber(session).processOffer(sdpOffer);
+
+        recordMediaPipeline.getWebRtcEpOfSubscriber(session).addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
+            @Override
+            public void onEvent(IceCandidateFoundEvent event) {
+                JsonObject response = new JsonObject();
+                response.addProperty("method", "media");
+                response.addProperty("event", "iceCandidate");
+                JsonObject candidate = new JsonObject();
+                candidate.addProperty("for", SEND_ICE_FOR_LIVE);
+                candidate.add("candidate", JsonUtils
+                        .toJsonObject(event.getCandidate()));
+                response.add("candidate", candidate);
+                try {
+                    synchronized (session) {
+                        session.sendMessage(response);
+                    }
+                } catch (IOException e) {
+                    log.debug(e.getMessage());
+                }
+            }
+        });
+
+        JsonObject response = new JsonObject();
+        response.addProperty("method", "media");
+        response.addProperty("event", "liveWatchResponse");
+        response.addProperty("response", "accepted");
+        response.addProperty("sdpAnswer", sdpAnswer);
+
+        synchronized (session) {
+            System.out.println("Sending sdp ans message to " + session.getUsername());
+            session.sendMessage(response);
+        }
+
+        recordMediaPipeline.getWebRtcEpOfSubscriber(session).gatherCandidates();
+    }
     //endregion
 
     /***/
@@ -756,57 +821,6 @@ public class EndPointHandler extends TextWebSocketHandler {
                 subscriberController.removeUserListListener(session);
         }
     }
-
-    //region Live video handlers
-
-    /**
-     * todo: not working
-     */
-    private void startLiveVideo(String from, String sdpOffer, UserSession requestingUser) throws IOException {
-        UserSession userRecording = registry.getByName(from);
-        RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getSessionId());
-
-        recordMediaPipeline.addLiveWatcher(requestingUser);
-        requestingUser.setRecordMediaPipeline(recordMediaPipeline);
-
-        // sdp negotiation
-        String sdpAnswer = recordMediaPipeline.getWebRtcEpOfSubscriber(requestingUser).processOffer(sdpOffer);
-
-        recordMediaPipeline.getWebRtcEpOfSubscriber(requestingUser).addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
-            @Override
-            public void onEvent(IceCandidateFoundEvent event) {
-                JsonObject response = new JsonObject();
-                response.addProperty("method", "media");
-                response.addProperty("event", "iceCandidate");
-                JsonObject candidate = new JsonObject();
-                candidate.addProperty("for", SEND_ICE_FOR_PLAY);
-                candidate.add("candidate", JsonUtils
-                        .toJsonObject(event.getCandidate()));
-                response.add("candidate", candidate);
-                try {
-                    synchronized (requestingUser) {
-                        requestingUser.sendMessage(response);
-                    }
-                } catch (IOException e) {
-                    log.debug(e.getMessage());
-                }
-            }
-        });
-
-        JsonObject response = new JsonObject();
-        response.addProperty("id", "liveResponse");
-        response.addProperty("response", "accepted");
-        response.addProperty("sdpAnswer", sdpAnswer);
-
-        synchronized (requestingUser) {
-            System.out.println("Sending sdp ans message to " + requestingUser.getUsername());
-            requestingUser.sendMessage(response);
-        }
-
-        recordMediaPipeline.getWebRtcEpOfSubscriber(requestingUser).gatherCandidates();
-    }
-    //endregion
-
 
     private void handleErrorResponse(Throwable throwable, final WebSocketSession session, String responseId)
             throws IOException {

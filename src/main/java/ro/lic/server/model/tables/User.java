@@ -75,6 +75,7 @@ public class User implements Serializable {
             length = 5)
     @Expose
     private String programStart;
+
     @Column(nullable = false,
             length = 5)
     @Expose
@@ -173,7 +174,7 @@ public class User implements Serializable {
         return status;
     }
 
-    public void setOnline(String status) {
+    public void setStatus(String status) {
         this.status = status;
     }
 
