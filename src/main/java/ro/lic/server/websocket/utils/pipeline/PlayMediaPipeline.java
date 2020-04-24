@@ -49,7 +49,7 @@ public class PlayMediaPipeline {
 
         // Media Elements (WebRtcEndpoint, PlayerEndpoint)
         webRtc = new WebRtcEndpoint.Builder(pipeline).build();
-        webRtc.setMaxVideoRecvBandwidth(2500, new Continuation<Void>() {
+        webRtc.setMaxVideoRecvBandwidth(3000, new Continuation<Void>() {
             @Override
             public void onSuccess(Void aVoid) throws Exception {
                 System.out.println("Set max video recv band");
@@ -60,7 +60,7 @@ public class PlayMediaPipeline {
                 System.out.println("Failed to set max video recv band");
             }
         }); // unit kbps (set it to 2.5 mbs)
-        webRtc.setMaxVideoSendBandwidth(2500, new Continuation<Void>() {
+        webRtc.setMaxVideoSendBandwidth(3000, new Continuation<Void>() {
             @Override
             public void onSuccess(Void aVoid) throws Exception {
                 System.out.println("Set max video recv band");
@@ -71,17 +71,10 @@ public class PlayMediaPipeline {
                 System.out.println("Failed to set max video recv band");
             }
         });
-        webRtc.setMaxAudioRecvBandwidth(500, new Continuation<Void>() {
-            @Override
-            public void onSuccess(Void aVoid) throws Exception {
-                System.out.println("Set max audio recv band");
-            }
 
-            @Override
-            public void onError(Throwable throwable) throws Exception {
-                System.out.println("Failed to set max audio recv band");
-            }
-        });
+        webRtc.setMaxOutputBitrate(3000);
+        webRtc.setMinOutputBitrate(3000);
+
         //player = new PlayerEndpoint.Builder(pipeline, RECORDING_PATH + user + RECORDING_EXT).build();
         player = new PlayerEndpoint.Builder(pipeline, path).build();
 

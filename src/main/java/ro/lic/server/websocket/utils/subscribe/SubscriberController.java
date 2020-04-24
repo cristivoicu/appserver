@@ -17,6 +17,7 @@ public class SubscriberController {
     private static final Gson gson = new GsonBuilder().setDateFormat("MMM dd, yyyy, h:mm:ss a").setPrettyPrinting().excludeFieldsWithoutExposeAnnotation().create();
 
     private List<UserSession> userListListener = new LinkedList<>();
+    private List<UserSession> mapChangesListener = new LinkedList<>();
 
     public void addUserListListener(UserSession session){
         userListListener.add(session);
@@ -26,8 +27,16 @@ public class SubscriberController {
         userListListener.remove(session);
     }
 
-    private void notifySubscribers(JsonObject message){
-        for(UserSession session : userListListener){
+    public void addMapChangesSubscriber(UserSession session) {
+        mapChangesListener.add(session);
+    }
+
+    public void removeMapChangesSubscriber(UserSession session){
+        mapChangesListener.remove(session);
+    }
+
+    private void notifySubscribers(JsonObject message, List<UserSession> list){
+        for(UserSession session : list){
             synchronized (session.getSession()){
                 try {
                     session.sendMessage(message);
@@ -45,7 +54,7 @@ public class SubscriberController {
         message.addProperty("event", "userUpdated");
         message.addProperty("payload", gson.toJson(modifiedUser));
 
-        notifySubscribers(message);
+        notifySubscribers(message, userListListener);
     }
 
     public void notifySubscribersOnUserStatusModified(Status status, String username){
@@ -56,6 +65,20 @@ public class SubscriberController {
         message.addProperty("status", status.name());
         message.addProperty("username", username);
 
-        notifySubscribers(message);
+        notifySubscribers(message, userListListener);
+    }
+
+    public void notifySubscribersOnLocationChanged(String username, double lat, double lng){
+        JsonObject message = new JsonObject();
+
+        message.addProperty("method", "subscribe");
+        message.addProperty("event", "mapItemLocation");
+        JsonObject payload = new JsonObject();
+        payload.addProperty("username", username);
+        payload.addProperty("lat", lat);
+        payload.addProperty("lng", lng);
+        message.add("payload", payload);
+
+        notifySubscribers(message, mapChangesListener);
     }
 }

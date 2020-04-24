@@ -17,22 +17,23 @@ public class RecordMediaPipeline {
     private static final String RECORDING_EXT_WEBM = ".webm";
     private final String recordingPath;
 
-    private final MediaPipeline mediaPipeline;
+    private final MediaPipeline mMediaPipeline;
     private final WebRtcEndpoint recordingWebRtcEndpoint;
     private final WebRtcEndpoint liveWatchWebRtcEndpoint;
     private final RecorderEndpoint recorderEndpoint;
 
     private final Map<String, WebRtcEndpoint> liveWatchers; //outgoings
+    private HubPort mHubPort;
 
     public RecordMediaPipeline(KurentoClient kurentoClient, String from) {
         // create recording path
         recordingPath = String.format("file:///home/kurento/UsersVideos/%s__%s%s", dateFormat.format(new Date()), from, RECORDING_EXT_WEBM);
         // create media pipeline
-        mediaPipeline = kurentoClient.createMediaPipeline();
+        mMediaPipeline = kurentoClient.createMediaPipeline();
 
         // create endpoints
-        recordingWebRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
-        liveWatchWebRtcEndpoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
+        recordingWebRtcEndpoint = new WebRtcEndpoint.Builder(mMediaPipeline).build();
+        liveWatchWebRtcEndpoint = new WebRtcEndpoint.Builder(mMediaPipeline).build();
         // setting the max bandwidth to 2.5 mbs (full hd capable)
         recordingWebRtcEndpoint.setMaxVideoRecvBandwidth(3000, new Continuation<Void>() {
             @Override
@@ -71,8 +72,9 @@ public class RecordMediaPipeline {
 
         liveWatchWebRtcEndpoint.setMaxVideoRecvBandwidth(3000);
         liveWatchWebRtcEndpoint.setMaxVideoSendBandwidth(3000);
+        liveWatchWebRtcEndpoint.setMaxOutputBitrate(3000);
 
-        recorderEndpoint = new RecorderEndpoint.Builder(mediaPipeline, recordingPath)
+        recorderEndpoint = new RecorderEndpoint.Builder(mMediaPipeline, recordingPath)
                 .withMediaProfile(MediaProfileSpecType.WEBM)
                 .build();
 
@@ -98,10 +100,23 @@ public class RecordMediaPipeline {
         });
 
         // connections
-        recordingWebRtcEndpoint.connect(recorderEndpoint);
-        recordingWebRtcEndpoint.connect(liveWatchWebRtcEndpoint);
-
         liveWatchers = new ConcurrentHashMap<>();
+        Composite composite = new Composite.Builder(mMediaPipeline).build();
+
+
+        mHubPort = new HubPort.Builder(composite).build();
+        mHubPort.setMinOutputBitrate(3000);
+        recordingWebRtcEndpoint.connect(recorderEndpoint);
+        recordingWebRtcEndpoint.connect(mHubPort);
+        //mHubPort.connect(recorderEndpoint);
+
+        mHubPort.addMediaFlowInStateChangeListener(mediaFlowInStateChangeEvent -> {
+            System.out.println("HUB PORT MEDIA FLOW IN");
+        });
+
+        mHubPort.addMediaFlowOutStateChangeListener(mediaFlowOutStateChangeEvent -> {
+            System.out.println("HUB PORT MEDIA FLOW OUT");
+        });
     }
 
     /**
@@ -110,25 +125,15 @@ public class RecordMediaPipeline {
      * @param session is the subscriber user session
      */
     public void addLiveWatcher(UserSession session) {
-/*        WebRtcEndpoint liveWatcherWebRtcEndPoint = new WebRtcEndpoint.Builder(mediaPipeline).build();
+        WebRtcEndpoint liveWatcherWebRtcEndPoint = new WebRtcEndpoint.Builder(mMediaPipeline).build();
 
-        liveWatcherWebRtcEndPoint.setMaxVideoSendBandwidth(2500);
-        liveWatcherWebRtcEndPoint.setMaxVideoRecvBandwidth(2500);
+        liveWatcherWebRtcEndPoint.setMaxVideoSendBandwidth(3000);
+        liveWatcherWebRtcEndPoint.setMaxVideoRecvBandwidth(3000);
+        liveWatcherWebRtcEndPoint.setMaxOutputBitrate(3000);
 
-        recordingWebRtcEndpoint.connect(liveWatcherWebRtcEndPoint, new Continuation<Void>() {
-            @Override
-            public void onSuccess(Void aVoid) throws Exception {
-                System.out.println("recording connected, success");
-            }
+        mHubPort.connect(liveWatcherWebRtcEndPoint);
 
-            @Override
-            public void onError(Throwable throwable) throws Exception {
-                System.out.println("onError: failed to connect recording endpoint to live watcher.");
-            }
-        });
-
-
-        liveWatchers.put(session.getSessionId(), liveWatcherWebRtcEndPoint);*/
+        liveWatchers.put(session.getSessionId(), liveWatcherWebRtcEndPoint);
     }
 
     /**
@@ -144,8 +149,7 @@ public class RecordMediaPipeline {
     }
 
     public WebRtcEndpoint getWebRtcEpOfSubscriber(UserSession session){
-        /*return liveWatchers.get(session.getSessionId());*/
-        return liveWatchWebRtcEndpoint;
+        return liveWatchers.get(session.getSessionId());
     }
 
     public void record() {
@@ -157,8 +161,7 @@ public class RecordMediaPipeline {
     }
 
     public void addLiveCandidate(IceCandidate iceCandidate, UserSession user){
-        /*liveWatchers.get(user.getSessionId()).addIceCandidate(iceCandidate);*/
-        liveWatchWebRtcEndpoint.addIceCandidate(iceCandidate);
+        liveWatchers.get(user.getSessionId()).addIceCandidate(iceCandidate);
     }
 
     public void addCandidate(IceCandidate iceCandidate) {
@@ -169,16 +172,12 @@ public class RecordMediaPipeline {
         recorderEndpoint.stopAndWait();
         recordingWebRtcEndpoint.release();
         recorderEndpoint.release();
-        mediaPipeline.release();
+        mMediaPipeline.release();
 
         //todo: release the subscriber endpoints
     }
 
     //region Getters and setters
-
-    public MediaPipeline getMediaPipeline() {
-        return mediaPipeline;
-    }
 
     public WebRtcEndpoint getRecordingWebRtcEndpoint() {
         return recordingWebRtcEndpoint;
