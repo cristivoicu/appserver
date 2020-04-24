@@ -13,12 +13,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
-import ro.lic.server.model.Status;
+import ro.lic.server.model.enums.Status;
 import ro.lic.server.model.location.UserLocation;
 import ro.lic.server.model.repository.ActionRepository;
+import ro.lic.server.model.repository.ServerLogRepository;
 import ro.lic.server.model.repository.UserRepository;
 import ro.lic.server.model.repository.VideoRepository;
 import ro.lic.server.model.tables.Action;
+import ro.lic.server.model.tables.ServerLog;
 import ro.lic.server.model.tables.User;
 import ro.lic.server.model.tables.Video;
 import ro.lic.server.websocket.security.Authoriser;
@@ -31,7 +33,6 @@ import java.io.IOException;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.DoubleAccumulator;
 
 import static ro.lic.server.constants.JsonConstants.*;
 
@@ -55,6 +56,9 @@ public class EndPointHandler extends TextWebSocketHandler {
     @Autowired
     private ActionRepository actionRepository;
 
+    @Autowired
+    private ServerLogRepository serverLogRepository;
+
     @Autowired(required = true)
     private KurentoClient kurento;
 
@@ -71,7 +75,9 @@ public class EndPointHandler extends TextWebSocketHandler {
         String name = registry.getBySession(session).getUsername();
 
         User user = userRepository.getUser(name);
-        actionRepository.userLogout(user);
+        //actionRepository.userLogout(user);
+        serverLogRepository.userLogout(user);
+
         userRepository.setUserOffline(user.getUsername());
         subscriberController.notifySubscribersOnUserStatusModified(Status.OFFLINE, user.getUsername());
         stop(session);
@@ -99,7 +105,8 @@ public class EndPointHandler extends TextWebSocketHandler {
             registry.register(userSession);
 
             User user = userRepository.getUser(username);
-            actionRepository.userLogin(user);
+            //actionRepository.userLogin(user);
+            serverLogRepository.userLogin(user);
             subscriberController.notifySubscribersOnUserStatusModified(Status.ONLINE, username);
         }
     }
@@ -177,7 +184,8 @@ public class EndPointHandler extends TextWebSocketHandler {
                 userModel.setStatus(Status.OFFLINE.name());
 
                 User user = userRepository.getUser(userSession.getUsername());
-                actionRepository.onEnrolledUser(user);
+                //actionRepository.onEnrolledUser(user);
+                serverLogRepository.onUserEnrolled(user);
 
                 BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
                 userModel.setPassword(encoder.encode(userModel.getPassword()));
@@ -201,7 +209,8 @@ public class EndPointHandler extends TextWebSocketHandler {
             User userTarget = User.fromJson(receivedMessage.get("payload").getAsString());
 
             User user = userRepository.getUser(userSession.getUsername());
-            actionRepository.onEditUser(user, userTarget);
+            //actionRepository.onEditUser(user, userTarget);
+            serverLogRepository.onUserEdited(user, userTarget);
 
             int i = userRepository.updateUser(userTarget);
             System.out.println("Updated rows: " + i);
@@ -227,7 +236,9 @@ public class EndPointHandler extends TextWebSocketHandler {
         String userTargetUsername = receivedMessage.get("payload").getAsString();
 
         User admin = userRepository.getUser(userSession.getUsername());
-        actionRepository.onDisabledUser(admin, userTargetUsername);
+        //actionRepository.onDisabledUser(admin, userTargetUsername);
+        serverLogRepository.onUserDisabled(admin, userTargetUsername);
+
         userRepository.disableUser(userTargetUsername);
         System.out.println(String.format("Disabled account %s by %s", userTargetUsername, admin.getUsername()));
 
@@ -263,10 +274,13 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     //region Request method message
     /***/
-    private void handleRequestMethodMessage(UserSession userSession, JsonObject receivedMessage) throws IOException {
+    private void handleRequestMethodMessage(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         switch (receivedMessage.get("event").getAsString()) {
             case "requestTimeline":
                 handleRequestTimelineEvent(userSession, receivedMessage);
+                break;
+            case "requestServerLog":
+                handleRequestServerLogEvent(userSession, receivedMessage);
                 break;
             case "requestRecordedVideos":
                 handleRequestRecordedVideosEvent(userSession, receivedMessage);
@@ -282,27 +296,45 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
     }
 
-    private void handleRequestTimelineEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
+    private void handleRequestTimelineEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseListTimeline(userSession)) {
             // target user
             String forUser = receivedMessage.get("user").getAsString();
             String dateString = receivedMessage.get("date").getAsString();
             User user = userRepository.getUser(forUser);
 
-            List<Action> actions = actionRepository.getTimeLineForUserOnDate(user, dateString);
+            //List<Action> actions = actionRepository.getTimeLineForUserOnDate(user, dateString);
+            List<ServerLog> serverLogs = serverLogRepository.getLogOnDateForUser(dateString, user);
 
             JsonObject response = new JsonObject();
             response.addProperty("method", "request");
             response.addProperty("event", "requestTimeline");
-            response.addProperty("payload", gson.toJson(actions));
+            response.addProperty("payload", gson.toJson(serverLogs));
 
-            synchronized (userSession) {
+            synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
         }
     }
 
-    private void handleRequestRecordedVideosEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
+    private void handleRequestServerLogEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
+        if(Authoriser.authoriseListTimeline(userSession)){
+            String dateString = receivedMessage.get("date").getAsString();
+
+            List<ServerLog> serverLogs = serverLogRepository.getLogOnDate(dateString);
+
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "request");
+            response.addProperty("event", "requestServerLog");
+            response.addProperty("payload", gson.toJson(serverLogs));
+
+            synchronized (userSession.getSession()){
+                userSession.sendMessage(response);
+            }
+        }
+    }
+
+    private void handleRequestRecordedVideosEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseListRecordedVideos(userSession)) {
             String forUser = receivedMessage.get("user").getAsString();
             User user = userRepository.getUser(forUser);
@@ -320,7 +352,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
     }
 
-    private void handleRequestAllUsersEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
+    private void handleRequestAllUsersEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseListUsers(userSession)) {
 
             List<User> users = userRepository.getAllUsers();
@@ -336,7 +368,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
     }
 
-    private void handleRequestOnlineUsersEvent(UserSession userSession, JsonObject receivedMessage) {
+    private void handleRequestOnlineUsersEvent(final UserSession userSession, final JsonObject receivedMessage) {
         if (Authoriser.authoriseListUsers(userSession)) {
 
         }
@@ -456,7 +488,8 @@ public class EndPointHandler extends TextWebSocketHandler {
 
         if (Authoriser.authorisePlayVideo(session)) {
             final User user = userRepository.getUser(session.getUsername());
-            actionRepository.userStartedPlaybackVideo(user);
+            //actionRepository.userStartedPlaybackVideo(user);
+            serverLogRepository.userStartedPlayback(user);
 
 
             String sdpOffer = receivedMessage.get("sdpOffer").getAsString();
@@ -471,7 +504,8 @@ public class EndPointHandler extends TextWebSocketHandler {
                 @Override
                 public void onEvent(ErrorEvent errorEvent) {
                     System.out.println("Player error event...");
-                    actionRepository.userEndedPlaybackVideo(user);
+                    //actionRepository.userEndedPlaybackVideo(user);
+                    serverLogRepository.userEndedPlayback(user);
                     playMediaPipeline.sendPlayEnd(session.getSession());
                     playPipelines.remove(session.getSessionId());
                 }
@@ -480,7 +514,8 @@ public class EndPointHandler extends TextWebSocketHandler {
                 @Override
                 public void onEvent(EndOfStreamEvent endOfStreamEvent) {
                     System.out.println("Player end of stream event...");
-                    actionRepository.userEndedPlaybackVideo(user);
+                    //actionRepository.userEndedPlaybackVideo(user);
+                    serverLogRepository.userEndedPlayback(user);
                     playMediaPipeline.sendPlayEnd(session.getSession());
                     playPipelines.remove(session.getSessionId());
                 }
@@ -658,7 +693,8 @@ public class EndPointHandler extends TextWebSocketHandler {
      */
     private void handleStopVideoRequestEvent(UserSession session, JsonObject receivedMessage) {
         User user = userRepository.getUser(session.getUsername());
-        actionRepository.userEndedPlaybackVideo(user);
+        //actionRepository.userEndedPlaybackVideo(user);
+        serverLogRepository.userEndedPlayback(user);
 
         PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
         playMediaPipeline.getPlayer().stop();
@@ -739,7 +775,8 @@ public class EndPointHandler extends TextWebSocketHandler {
 
 
         User user = userRepository.getUser(session.getUsername());
-        actionRepository.userStartedRecordingSession(user);
+        //actionRepository.userStartedRecordingSession(user);
+        serverLogRepository.userStartStreaming(user);
         Video video = new Video(recordMediaPipeline.getRecordingPath(), user, new Date());
         videoRepository.addVideo(video);
     }
@@ -750,7 +787,8 @@ public class EndPointHandler extends TextWebSocketHandler {
     private void handleStopVideoSteramRequestEvent(UserSession session, JsonObject receivedMessage) {
         RecordMediaPipeline pipeline = recordPipeline.get(session.getSessionId());
         User user = userRepository.getUser(session.getUsername());
-        actionRepository.userEndedRecordingSession(user);
+        //actionRepository.userEndedRecordingSession(user);
+        serverLogRepository.userEndStreaming(user);
 
         pipeline.release();
         //todo: notify observers about stopping the live stream

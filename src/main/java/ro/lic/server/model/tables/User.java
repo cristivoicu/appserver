@@ -4,8 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
-import ro.lic.server.model.Role;
-import ro.lic.server.model.Status;
+import ro.lic.server.model.enums.Role;
+import ro.lic.server.model.enums.Status;
 
 import javax.persistence.*;
 import java.io.Serializable;

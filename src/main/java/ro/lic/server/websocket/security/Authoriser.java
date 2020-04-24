@@ -1,6 +1,6 @@
 package ro.lic.server.websocket.security;
 
-import ro.lic.server.model.Role;
+import ro.lic.server.model.enums.Role;
 import ro.lic.server.websocket.utils.UserSession;
 
 /**

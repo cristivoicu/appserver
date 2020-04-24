@@ -5,8 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import ro.lic.server.model.Role;
-import ro.lic.server.model.Status;
+import ro.lic.server.model.enums.Role;
 import ro.lic.server.model.tables.User;
 
 import javax.transaction.Transactional;

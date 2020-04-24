@@ -16,7 +16,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.socket.server.standard.ServerEndpointExporter;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
-import ro.lic.server.model.Role;
+import ro.lic.server.model.enums.Role;
 import ro.lic.server.model.repository.UserRepository;
 import ro.lic.server.websocket.utils.UserRegistry;
 

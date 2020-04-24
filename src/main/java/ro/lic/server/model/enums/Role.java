@@ -1,4 +1,4 @@
-package ro.lic.server.model;
+package ro.lic.server.model.enums;
 
 /**
  * This enum represents the roles that a user can have

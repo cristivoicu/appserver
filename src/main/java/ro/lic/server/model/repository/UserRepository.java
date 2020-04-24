@@ -3,8 +3,8 @@ package ro.lic.server.model.repository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
-import ro.lic.server.model.Role;
-import ro.lic.server.model.Status;
+import ro.lic.server.model.enums.Role;
+import ro.lic.server.model.enums.Status;
 import ro.lic.server.model.dao.UserDao;
 import ro.lic.server.model.tables.User;
 

@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import org.springframework.stereotype.Component;
-import ro.lic.server.model.Status;
+import ro.lic.server.model.enums.Status;
 import ro.lic.server.model.tables.User;
 import ro.lic.server.websocket.utils.UserSession;
 
