@@ -276,6 +276,9 @@ public class EndPointHandler extends TextWebSocketHandler {
     /***/
     private void handleRequestMethodMessage(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         switch (receivedMessage.get("event").getAsString()) {
+            case "requestStartStreaming":
+                handleRequestUserToStreamEvent(userSession, receivedMessage);
+                break;
             case "requestTimeline":
                 handleRequestTimelineEvent(userSession, receivedMessage);
                 break;
@@ -285,6 +288,9 @@ public class EndPointHandler extends TextWebSocketHandler {
             case "requestRecordedVideos":
                 handleRequestRecordedVideosEvent(userSession, receivedMessage);
                 break;
+            case "requestUserData":
+                handleRequestUserDataEvent(userSession, receivedMessage);
+                break;
             case "requestAllUsers":
                 handleRequestAllUsersEvent(userSession, receivedMessage);
                 break;
@@ -293,6 +299,21 @@ public class EndPointHandler extends TextWebSocketHandler {
                 break;
             default:
 
+        }
+    }
+
+    private void handleRequestUserToStreamEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
+        if (Authoriser.authoriseRequestUserToStream(userSession)) {
+            String username = receivedMessage.get("user").getAsString();
+
+            UserSession userTarget = registry.getByName(username);
+            JsonObject messsage = new JsonObject();
+            messsage.addProperty("method", "request");
+            messsage.addProperty("event", "requestLiveStreaming");
+            messsage.addProperty("from", userSession.getUsername());
+            synchronized (userTarget.getSession()){
+                userTarget.sendMessage(messsage);
+            }
         }
     }
 
@@ -346,10 +367,27 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("event", "requestRecordedVideos");
             response.addProperty("payload", gson.toJson(videos));
 
-            synchronized (userSession) {
+            synchronized (userSession.getSession()){
                 userSession.sendMessage(response);
             }
         }
+    }
+
+    private void handleRequestUserDataEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
+        String requestedUsername = receivedMessage.get("user").getAsString();
+        if(Authoriser.authoriseRequestUserData(userSession, requestedUsername)){
+            User userData = userRepository.getUser(requestedUsername);
+
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "request");
+            response.addProperty("event", "requestUserData");
+            response.addProperty("payload", gson.toJson(userData));
+
+            synchronized (userSession.getSession()){
+                userSession.sendMessage(response);
+            }
+        }
+
     }
 
     private void handleRequestAllUsersEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {

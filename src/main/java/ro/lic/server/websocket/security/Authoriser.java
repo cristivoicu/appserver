@@ -37,4 +37,18 @@ public class Authoriser {
     public static boolean authoriseEditUser(UserSession session) {
         return session.getRole() == Role.ADMIN;
     }
+
+    public static boolean authoriseRequestUserData(UserSession session, String requestedUsername){
+        if(session.getUsername().equals(requestedUsername)){
+            return true;
+        }
+        if(session.getRole() == Role.ADMIN){
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean authoriseRequestUserToStream(UserSession session){
+        return session.getRole() == Role.ADMIN;
+    }
 }
