@@ -22,6 +22,8 @@ public class RecordMediaPipeline {
     private final WebRtcEndpoint liveWatchWebRtcEndpoint;
     private final RecorderEndpoint recorderEndpoint;
 
+    private boolean isStreaming = false;
+
     private final Map<String, WebRtcEndpoint> liveWatchers; //outgoings
     private HubPort mHubPort;
 
@@ -103,20 +105,21 @@ public class RecordMediaPipeline {
         liveWatchers = new ConcurrentHashMap<>();
         Composite composite = new Composite.Builder(mMediaPipeline).build();
 
-
         mHubPort = new HubPort.Builder(composite).build();
-        mHubPort.setMinOutputBitrate(3000);
-        recordingWebRtcEndpoint.connect(recorderEndpoint);
+        mHubPort.setMaxOutputBitrate(3000);
+        //recordingWebRtcEndpoint.connect(recorderEndpoint);
         recordingWebRtcEndpoint.connect(mHubPort);
-        //mHubPort.connect(recorderEndpoint);
+        mHubPort.connect(recorderEndpoint);
 
         mHubPort.addMediaFlowInStateChangeListener(mediaFlowInStateChangeEvent -> {
             System.out.println("HUB PORT MEDIA FLOW IN");
+            //recorderEndpoint.record();
         });
 
         mHubPort.addMediaFlowOutStateChangeListener(mediaFlowOutStateChangeEvent -> {
             System.out.println("HUB PORT MEDIA FLOW OUT");
         });
+        isStreaming = true;
     }
 
     /**
@@ -169,7 +172,10 @@ public class RecordMediaPipeline {
     }
 
     public void release() {
-        recorderEndpoint.stopAndWait();
+        if(isStreaming) {
+            recorderEndpoint.stopAndWait();
+            isStreaming = false;
+        }
         recordingWebRtcEndpoint.release();
         recorderEndpoint.release();
         mMediaPipeline.release();

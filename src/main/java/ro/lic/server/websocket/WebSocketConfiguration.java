@@ -49,7 +49,7 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
         KurentoClient kurentoClient;
 
         SslContextFactory sec = new SslContextFactory(true);
-        sec.setValidateCerts(true);
+        sec.setValidateCerts(false);
         JsonRpcClientWebSocket rpcClient = new JsonRpcClientWebSocket(KMS_WS_URI_DEFAULT, sec);
         kurentoClient = KurentoClient.createFromJsonRpcClient(rpcClient);
 

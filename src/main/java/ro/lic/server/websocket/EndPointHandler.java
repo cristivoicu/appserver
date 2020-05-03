@@ -140,6 +140,8 @@ public class EndPointHandler extends TextWebSocketHandler {
                 case "unsubscribe":
                     handleUnsubscribeMethodMessage(user, receivedMessage);
                     break;
+                case "activity":
+                    handleActivityMethodMessage(user, receivedMessage);
                 default:
 
             }
@@ -896,6 +898,10 @@ public class EndPointHandler extends TextWebSocketHandler {
             case "userList":
                 subscriberController.removeUserListListener(session);
         }
+    }
+
+    private void handleActivityMethodMessage(UserSession session, JsonObject receivedMessage){
+        System.out.println(receivedMessage.get("event").getAsString() + ", " + receivedMessage.get("precision").getAsInt());
     }
 
     private void handleErrorResponse(Throwable throwable, final WebSocketSession session, String responseId)
