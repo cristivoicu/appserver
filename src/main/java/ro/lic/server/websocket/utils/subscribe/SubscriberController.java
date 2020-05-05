@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import org.springframework.stereotype.Component;
 import ro.lic.server.model.enums.Status;
+import ro.lic.server.model.non_db_models.LiveWatcher;
 import ro.lic.server.model.tables.User;
 import ro.lic.server.websocket.utils.UserSession;
 
@@ -18,6 +19,7 @@ public class SubscriberController {
 
     private List<UserSession> userListListener = new LinkedList<>();
     private List<UserSession> mapChangesListener = new LinkedList<>();
+    private List<UserSession> liveStreamerListener = new LinkedList<>();
 
     public void addUserListListener(UserSession session){
         userListListener.add(session);
@@ -35,7 +37,18 @@ public class SubscriberController {
         mapChangesListener.remove(session);
     }
 
+    public void addLiveStreamerListener(UserSession session){
+        liveStreamerListener.add(session);
+    }
+
+    public void removeLiveStreamerListener(UserSession session){
+        liveStreamerListener.remove(session);
+    }
+
     private void notifySubscribers(JsonObject message, List<UserSession> list){
+        if(list.isEmpty())
+            return;
+
         for(UserSession session : list){
             synchronized (session.getSession()){
                 try {
@@ -45,6 +58,12 @@ public class SubscriberController {
                 }
             }
         }
+    }
+
+    public void removeSubscriberAfterConnectionClosed(UserSession session){
+        userListListener.remove(session);
+        liveStreamerListener.remove(session);
+        mapChangesListener.remove(session);
     }
 
     public void notifySubscribersOnUserModified(User modifiedUser){
@@ -80,5 +99,27 @@ public class SubscriberController {
         message.add("payload", payload);
 
         notifySubscribers(message, mapChangesListener);
+    }
+
+    public void notifySubscribersOnLiveStreamingStarted(LiveWatcher liveWatcher){
+        JsonObject message = new JsonObject();
+
+        message.addProperty("method", "subscribe");
+        message.addProperty("event", "liveStreamers");
+        message.addProperty("status", "started");
+        message.addProperty("payload", gson.toJson(liveWatcher));
+
+        notifySubscribers(message, liveStreamerListener);
+    }
+
+    public void notifySubscribersOnLiveStreamingStopped(LiveWatcher liveWatcher){
+        JsonObject message = new JsonObject();
+
+        message.addProperty("method", "subscribe");
+        message.addProperty("event", "liveStreamers");
+        message.addProperty("status", "stopped");
+        message.addProperty("payload", gson.toJson(liveWatcher));
+
+        notifySubscribers(message, liveStreamerListener);
     }
 }

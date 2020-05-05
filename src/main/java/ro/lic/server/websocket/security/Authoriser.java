@@ -51,4 +51,8 @@ public class Authoriser {
     public static boolean authoriseRequestUserToStream(UserSession session){
         return session.getRole() == Role.ADMIN;
     }
+
+    public static boolean authoriseRequestLiveStreamers(UserSession session){
+        return  session.getRole() == Role.ADMIN;
+    }
 }

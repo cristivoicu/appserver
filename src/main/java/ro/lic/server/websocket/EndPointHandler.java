@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import org.kurento.client.*;
+import org.kurento.client.EventListener;
 import org.kurento.commons.exception.KurentoException;
 import org.kurento.jsonrpc.JsonUtils;
 import org.slf4j.Logger;
@@ -14,12 +15,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import ro.lic.server.model.enums.Status;
-import ro.lic.server.model.location.UserLocation;
+import ro.lic.server.model.non_db_models.LiveWatcher;
+import ro.lic.server.model.non_db_models.UserLocation;
 import ro.lic.server.model.repository.ActionRepository;
 import ro.lic.server.model.repository.ServerLogRepository;
 import ro.lic.server.model.repository.UserRepository;
 import ro.lic.server.model.repository.VideoRepository;
-import ro.lic.server.model.tables.Action;
 import ro.lic.server.model.tables.ServerLog;
 import ro.lic.server.model.tables.User;
 import ro.lic.server.model.tables.Video;
@@ -30,8 +31,7 @@ import ro.lic.server.websocket.utils.pipeline.RecordMediaPipeline;
 import ro.lic.server.websocket.utils.subscribe.SubscriberController;
 
 import java.io.IOException;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static ro.lic.server.constants.JsonConstants.*;
@@ -41,10 +41,18 @@ public class EndPointHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(EndPointHandler.class);
     private static final Gson gson = new GsonBuilder().setDateFormat("MMM dd, yyyy, h:mm:ss a").setPrettyPrinting().excludeFieldsWithoutExposeAnnotation().create();
 
+    /**
+     * pipelines with user that send live streaming to the media server
+     */
     private final ConcurrentHashMap<String, RecordMediaPipeline> recordPipeline = new ConcurrentHashMap<>();
+    /**
+     * pipeline for user that are watching recorded videos
+     */
     private final ConcurrentHashMap<String, PlayMediaPipeline> playPipelines = new ConcurrentHashMap<>();
 
-    /** key is username*/
+    /**
+     * key is username
+     */
     private final ConcurrentHashMap<String, UserLocation> userLocations = new ConcurrentHashMap<>();
 
     @Autowired
@@ -69,18 +77,24 @@ public class EndPointHandler extends TextWebSocketHandler {
     private SubscriberController subscriberController;
 
 
-
     @Override
     public void afterConnectionClosed(final WebSocketSession session, CloseStatus status) throws Exception {
         String name = registry.getBySession(session).getUsername();
 
         User user = userRepository.getUser(name);
-        //actionRepository.userLogout(user);
         serverLogRepository.userLogout(user);
+
+        if(recordPipeline.contains(name)){
+            recordPipeline.remove(name);
+            subscriberController.notifySubscribersOnLiveStreamingStopped(new LiveWatcher(user.getName(), user.getUsername()));
+        }
 
         userRepository.setUserOffline(user.getUsername());
         subscriberController.notifySubscribersOnUserStatusModified(Status.OFFLINE, user.getUsername());
+
         stop(session);
+        // removing all subscriptions that user has
+        subscriberController.removeSubscriberAfterConnectionClosed(registry.getBySession(session));
         registry.removeBySession(session);
         System.out.println(String.format("User %s disconnected!", name));
     }
@@ -152,6 +166,14 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     //region Update method message
+
+    /**
+     * Update message method type.
+     * <p>Updates the database.</p>
+     *
+     * @param receivedMessage is the received message by the application server
+     * @param session         is the user session that send the message
+     */
     private void handleUpdateMethodMessage(JsonObject receivedMessage, UserSession session) throws IOException {
         switch (receivedMessage.get("event").getAsString()) {
             case "enroll":
@@ -175,7 +197,13 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
     }
 
-    /***/
+    /**
+     * Update method: enroll event
+     * <p> Handles user enroll in the application database.</p>
+     *
+     * @param receivedMessage is the received message by the application server
+     * @param userSession     is the user session that send the message
+     */
     private void handleEnrollEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseEnroll(userSession)) {
             System.out.println("Enroll event: " + receivedMessage.toString());
@@ -205,7 +233,12 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
     }
 
-    /***/
+    /**
+     * Update use personal attributes.
+     *
+     * @param receivedMessage is the received message by the application server
+     * @param userSession     is the user session that send the message
+     */
     private void handleUpdateUserEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseEditUser(userSession)) {
             User userTarget = User.fromJson(receivedMessage.get("payload").getAsString());
@@ -223,8 +256,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             if (i != 0) {
                 response.addProperty("response", "success");
                 subscriberController.notifySubscribersOnUserModified(userTarget);
-            }
-            else
+            } else
                 response.addProperty("response", "fail");
 
             synchronized (userSession) {
@@ -233,7 +265,15 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
     }
 
-    /***/
+    /**
+     * Disable user.
+     * <p> A disabled user cannot login to his account.</p>
+     * <p> Disabled users are not deleted from database. Their status is modified to disabled, so they can not
+     * login to their account. Only an admin can disable an account.</p>
+     *
+     * @param receivedMessage is the received message by the application server
+     * @param userSession     is the user session that send the message
+     */
     private void handleDisableUserEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
         String userTargetUsername = receivedMessage.get("payload").getAsString();
 
@@ -275,7 +315,13 @@ public class EndPointHandler extends TextWebSocketHandler {
     //endregion
 
     //region Request method message
-    /***/
+
+    /**
+     * Handles requests made by users from database.
+     *
+     * @param receivedMessage is the received message by the application server
+     * @param userSession     is the user session that send the message
+     */
     private void handleRequestMethodMessage(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         switch (receivedMessage.get("event").getAsString()) {
             case "requestStartStreaming":
@@ -299,6 +345,8 @@ public class EndPointHandler extends TextWebSocketHandler {
             case "requestOnlineUsers":
                 handleRequestOnlineUsersEvent(userSession, receivedMessage);
                 break;
+            case "requestLiveStreamers":
+                handleRequestLiveStreamersEvent(userSession, receivedMessage);
             default:
 
         }
@@ -313,7 +361,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             messsage.addProperty("method", "request");
             messsage.addProperty("event", "requestLiveStreaming");
             messsage.addProperty("from", userSession.getUsername());
-            synchronized (userTarget.getSession()){
+            synchronized (userTarget.getSession()) {
                 userTarget.sendMessage(messsage);
             }
         }
@@ -341,7 +389,7 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     private void handleRequestServerLogEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
-        if(Authoriser.authoriseListTimeline(userSession)){
+        if (Authoriser.authoriseListTimeline(userSession)) {
             String dateString = receivedMessage.get("date").getAsString();
 
             List<ServerLog> serverLogs = serverLogRepository.getLogOnDate(dateString);
@@ -351,7 +399,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("event", "requestServerLog");
             response.addProperty("payload", gson.toJson(serverLogs));
 
-            synchronized (userSession.getSession()){
+            synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
         }
@@ -369,7 +417,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("event", "requestRecordedVideos");
             response.addProperty("payload", gson.toJson(videos));
 
-            synchronized (userSession.getSession()){
+            synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
         }
@@ -377,7 +425,7 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     private void handleRequestUserDataEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         String requestedUsername = receivedMessage.get("user").getAsString();
-        if(Authoriser.authoriseRequestUserData(userSession, requestedUsername)){
+        if (Authoriser.authoriseRequestUserData(userSession, requestedUsername)) {
             User userData = userRepository.getUser(requestedUsername);
 
             JsonObject response = new JsonObject();
@@ -385,7 +433,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("event", "requestUserData");
             response.addProperty("payload", gson.toJson(userData));
 
-            synchronized (userSession.getSession()){
+            synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
         }
@@ -413,9 +461,31 @@ public class EndPointHandler extends TextWebSocketHandler {
 
         }
     }
+
+    private void handleRequestLiveStreamersEvent(final UserSession session, final  JsonObject receivedMessage) throws IOException {
+        if(Authoriser.authoriseRequestLiveStreamers(session)){
+            List<LiveWatcher> liveWatchers = new ArrayList<>();
+
+            for(String key : recordPipeline.keySet()){
+                User user = userRepository.getUser(key);
+                liveWatchers.add(new LiveWatcher(user.getName(), user.getUsername()));
+            }
+
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "request");
+            response.addProperty("event", "requestLiveStreamers");
+            response.addProperty("payload", gson.toJson(liveWatchers));
+
+
+            synchronized (session.getSession()){
+                session.sendMessage(response);
+            }
+        }
+    }
     //endregion
 
     //region Media method message
+
     /**
      * Handles all media events
      */
@@ -485,6 +555,7 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     //region Playback handlers
+
     /**
      * This method handle a play video request
      * <p> The application server sends a response which must contain:
@@ -760,7 +831,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         // media logic
         RecordMediaPipeline recordMediaPipeline = new RecordMediaPipeline(kurento, from);
 
-        recordPipeline.put(session.getSessionId(), recordMediaPipeline);
+        recordPipeline.put(session.getUsername(), recordMediaPipeline);
 
         session.setRecordMediaPipeline(recordMediaPipeline);
 
@@ -819,26 +890,30 @@ public class EndPointHandler extends TextWebSocketHandler {
         serverLogRepository.userStartStreaming(user);
         Video video = new Video(recordMediaPipeline.getRecordingPath(), user, new Date());
         videoRepository.addVideo(video);
+        subscriberController.notifySubscribersOnLiveStreamingStarted(new LiveWatcher(user.getName(), user.getUsername()));
     }
 
     /**
-     * Handles the stop request from user client application
+     * Handles the stop streaming message from user client application
+     *
+     * @param session is the session that send the message
      */
     private void handleStopVideoSteramRequestEvent(UserSession session, JsonObject receivedMessage) {
-        RecordMediaPipeline pipeline = recordPipeline.get(session.getSessionId());
+        RecordMediaPipeline pipeline = recordPipeline.get(session.getUsername());
         User user = userRepository.getUser(session.getUsername());
-        //actionRepository.userEndedRecordingSession(user);
+        // actionRepository.userEndedRecordingSession(user);
         serverLogRepository.userEndStreaming(user);
-
+        // delete pipeline from active list!
         pipeline.release();
-        //todo: notify observers about stopping the live stream
+        recordPipeline.remove(session.getUsername());
+        subscriberController.notifySubscribersOnLiveStreamingStopped(new LiveWatcher(user.getName(), user.getUsername()));
     }
 
     //endregion
 
     private void handleLiveVideoWatchRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
-        UserSession userRecording = registry.getByName("voicu.cristian");
-        RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getSessionId());
+        UserSession userRecording = registry.getByName(receivedMessage.get("user").getAsString());
+        RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getUsername());
 
         recordMediaPipeline.addLiveWatcher(session);
         session.setRecordMediaPipeline(recordMediaPipeline);
@@ -884,23 +959,32 @@ public class EndPointHandler extends TextWebSocketHandler {
     //endregion
 
     /***/
-    private void handleSubscribeMethodMessage(UserSession session, JsonObject receivedMessage){
-        switch (receivedMessage.get("event").getAsString()){
+    private void handleSubscribeMethodMessage(UserSession session, JsonObject receivedMessage) {
+        switch (receivedMessage.get("event").getAsString()) {
             case "userUpdated":
                 subscriberController.addUserListListener(session);
+                break;
+            case "liveStreamers":
+                subscriberController.addLiveStreamerListener(session);
+                break;
             default:
 
         }
     }
 
-    private void handleUnsubscribeMethodMessage(UserSession session, JsonObject receivedMessage){
-        switch (receivedMessage.get("event").getAsString()){
+    private void handleUnsubscribeMethodMessage(UserSession session, JsonObject receivedMessage) {
+        switch (receivedMessage.get("event").getAsString()) {
             case "userList":
                 subscriberController.removeUserListListener(session);
+                break;
+            case "liveStreamers":
+                subscriberController.removeLiveStreamerListener(session);
+                break;
+            default:
         }
     }
 
-    private void handleActivityMethodMessage(UserSession session, JsonObject receivedMessage){
+    private void handleActivityMethodMessage(UserSession session, JsonObject receivedMessage) {
         System.out.println(receivedMessage.get("event").getAsString() + ", " + receivedMessage.get("precision").getAsInt());
     }
 
@@ -924,6 +1008,10 @@ public class EndPointHandler extends TextWebSocketHandler {
     private void stop(final WebSocketSession session) throws IOException {
         UserSession stopperUser = registry.getBySession(session);
         if (stopperUser != null) {
+            RecordMediaPipeline pipeline = recordPipeline.get(stopperUser.getUsername());
+            if(pipeline != null){
+                recordPipeline.remove(pipeline);
+            }
             stopperUser.release();
         }
     }

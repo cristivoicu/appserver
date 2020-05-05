@@ -1,7 +1,11 @@
-package ro.lic.server.model.location;
+package ro.lic.server.model.non_db_models;
+
+import com.google.gson.annotations.Expose;
 
 public class UserLocation {
+    @Expose
     private double lat;
+    @Expose
     private double lng;
 
     public UserLocation(double lat, double lng) {

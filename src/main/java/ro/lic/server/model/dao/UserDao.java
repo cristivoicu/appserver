@@ -13,7 +13,7 @@ import java.util.List;
 
 @Repository
 public interface UserDao extends CrudRepository<User, Long> {
-    @Query(value = "select * from users", nativeQuery = true)
+    @Query(value = "select * from users ORDER BY name", nativeQuery = true)
     List<User> findAll();
 
     @Modifying
