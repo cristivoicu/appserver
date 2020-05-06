@@ -30,7 +30,7 @@ public class UserRepository {
 
     public Role authenticate(String username, String password){
         User user = userDao.getUserByUsername(username);
-        if(user == null)
+        if(user == null || user.getStatus().equals(Status.DISABLED.name()))
             return null;
         String hashPassword = user.getPassword();
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();

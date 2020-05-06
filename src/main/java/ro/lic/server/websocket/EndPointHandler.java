@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
+import com.mysql.cj.x.protobuf.MysqlxCursor;
 import org.kurento.client.*;
 import org.kurento.client.EventListener;
 import org.kurento.commons.exception.KurentoException;
@@ -90,7 +91,11 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
 
         userRepository.setUserOffline(user.getUsername());
-        subscriberController.notifySubscribersOnUserStatusModified(Status.OFFLINE, user.getUsername());
+        try {
+            subscriberController.notifySubscribersOnUserStatusModified(Status.OFFLINE, user.getUsername());
+        }catch (IllegalStateException e){
+            // do nth, send message to a log out user(current admin)
+        }
 
         stop(session);
         // removing all subscriptions that user has
@@ -280,6 +285,9 @@ public class EndPointHandler extends TextWebSocketHandler {
         User admin = userRepository.getUser(userSession.getUsername());
         //actionRepository.onDisabledUser(admin, userTargetUsername);
         serverLogRepository.onUserDisabled(admin, userTargetUsername);
+
+        UserSession session = registry.getByName(userTargetUsername);
+        session.getSession().close(new CloseStatus(4999, "Account was disabled"));
 
         userRepository.disableUser(userTargetUsername);
         System.out.println(String.format("Disabled account %s by %s", userTargetUsername, admin.getUsername()));

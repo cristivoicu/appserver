@@ -170,7 +170,7 @@ public class User implements Serializable {
         this.programEnd = programEnd;
     }
 
-    public String isOnline() {
+    public String getStatus() {
         return status;
     }
 

@@ -25,7 +25,6 @@ public class RecordMediaPipeline {
     private boolean isStreaming = false;
 
     private final Map<String, WebRtcEndpoint> liveWatchers; //outgoings
-    private HubPort mHubPort;
 
     public RecordMediaPipeline(KurentoClient kurentoClient, String from) {
         // create recording path
@@ -72,6 +71,10 @@ public class RecordMediaPipeline {
             }
         });
 
+        recordingWebRtcEndpoint.addErrorListener(errorEvent -> {
+            System.out.println("ERROR: " + errorEvent.getDescription());
+        });
+
         liveWatchWebRtcEndpoint.setMaxVideoRecvBandwidth(3000);
         liveWatchWebRtcEndpoint.setMaxVideoSendBandwidth(3000);
         liveWatchWebRtcEndpoint.setMaxOutputBitrate(3000);
@@ -103,22 +106,8 @@ public class RecordMediaPipeline {
 
         // connections
         liveWatchers = new ConcurrentHashMap<>();
-        Composite composite = new Composite.Builder(mMediaPipeline).build();
+        recordingWebRtcEndpoint.connect(recorderEndpoint);
 
-        mHubPort = new HubPort.Builder(composite).build();
-        mHubPort.setMaxOutputBitrate(3000);
-        //recordingWebRtcEndpoint.connect(recorderEndpoint);
-        recordingWebRtcEndpoint.connect(mHubPort);
-        mHubPort.connect(recorderEndpoint);
-
-        mHubPort.addMediaFlowInStateChangeListener(mediaFlowInStateChangeEvent -> {
-            System.out.println("HUB PORT MEDIA FLOW IN");
-            //recorderEndpoint.record();
-        });
-
-        mHubPort.addMediaFlowOutStateChangeListener(mediaFlowOutStateChangeEvent -> {
-            System.out.println("HUB PORT MEDIA FLOW OUT");
-        });
         isStreaming = true;
     }
 
@@ -134,7 +123,8 @@ public class RecordMediaPipeline {
         liveWatcherWebRtcEndPoint.setMaxVideoRecvBandwidth(3000);
         liveWatcherWebRtcEndPoint.setMaxOutputBitrate(3000);
 
-        mHubPort.connect(liveWatcherWebRtcEndPoint);
+        //mHubPort.connect(liveWatcherWebRtcEndPoint);
+        recordingWebRtcEndpoint.connect(liveWatcherWebRtcEndPoint);
 
         liveWatchers.put(session.getSessionId(), liveWatcherWebRtcEndPoint);
     }
