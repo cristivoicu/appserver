@@ -16,6 +16,9 @@ public interface UserDao extends CrudRepository<User, Long> {
     @Query(value = "select * from users ORDER BY name", nativeQuery = true)
     List<User> findAll();
 
+    @Query(value = "select * from users  where status = 'ONLINE' ORDER BY name", nativeQuery = true)
+    List<User> findOnlineUsers();
+
     @Modifying
     @Transactional
     @Query(value = "UPDATE USERS u SET u.role = :role where u.username = :username", nativeQuery = true)

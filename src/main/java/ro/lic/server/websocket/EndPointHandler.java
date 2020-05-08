@@ -1,9 +1,6 @@
 package ro.lic.server.websocket;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonSyntaxException;
+import com.google.gson.*;
 import com.mysql.cj.x.protobuf.MysqlxCursor;
 import org.kurento.client.*;
 import org.kurento.client.EventListener;
@@ -85,7 +82,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         User user = userRepository.getUser(name);
         serverLogRepository.userLogout(user);
 
-        if(recordPipeline.contains(name)){
+        if (recordPipeline.contains(name)) {
             recordPipeline.remove(name);
             subscriberController.notifySubscribersOnLiveStreamingStopped(new LiveWatcher(user.getName(), user.getUsername()));
         }
@@ -93,7 +90,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         userRepository.setUserOffline(user.getUsername());
         try {
             subscriberController.notifySubscribersOnUserStatusModified(Status.OFFLINE, user.getUsername());
-        }catch (IllegalStateException e){
+        } catch (IllegalStateException e) {
             // do nth, send message to a log out user(current admin)
         }
 
@@ -231,7 +228,7 @@ public class EndPointHandler extends TextWebSocketHandler {
                 response.addProperty("event", "enroll");
                 response.addProperty("response", "success");
 
-                synchronized (userSession) {
+                synchronized (userSession.getSession()) {
                     userSession.sendMessage(response);
                 }
             }
@@ -264,7 +261,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             } else
                 response.addProperty("response", "fail");
 
-            synchronized (userSession) {
+            synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
         }
@@ -280,28 +277,30 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param userSession     is the user session that send the message
      */
     private void handleDisableUserEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
-        String userTargetUsername = receivedMessage.get("payload").getAsString();
+        if (Authoriser.authoriseToDisableUser(userSession)) {
+            String userTargetUsername = receivedMessage.get("payload").getAsString();
 
-        User admin = userRepository.getUser(userSession.getUsername());
-        //actionRepository.onDisabledUser(admin, userTargetUsername);
-        serverLogRepository.onUserDisabled(admin, userTargetUsername);
+            User admin = userRepository.getUser(userSession.getUsername());
+            //actionRepository.onDisabledUser(admin, userTargetUsername);
+            serverLogRepository.onUserDisabled(admin, userTargetUsername);
 
-        UserSession session = registry.getByName(userTargetUsername);
-        session.getSession().close(new CloseStatus(4999, "Account was disabled"));
+            UserSession session = registry.getByName(userTargetUsername);
+            session.getSession().close(new CloseStatus(4999, "Account was disabled"));
 
-        userRepository.disableUser(userTargetUsername);
-        System.out.println(String.format("Disabled account %s by %s", userTargetUsername, admin.getUsername()));
+            userRepository.disableUser(userTargetUsername);
+            System.out.println(String.format("Disabled account %s by %s", userTargetUsername, admin.getUsername()));
 
-        subscriberController.notifySubscribersOnUserStatusModified(Status.DISABLED, userTargetUsername);
+            subscriberController.notifySubscribersOnUserStatusModified(Status.DISABLED, userTargetUsername);
 
-        JsonObject response = new JsonObject();
+            JsonObject response = new JsonObject();
 
-        response.addProperty("method", "update");
-        response.addProperty("event", "disableUser");
-        response.addProperty("response", "success");
+            response.addProperty("method", "update");
+            response.addProperty("event", "disableUser");
+            response.addProperty("response", "success");
 
-        synchronized (userSession) {
-            userSession.sendMessage(response);
+            synchronized (userSession.getSession()) {
+                userSession.sendMessage(response);
+            }
         }
     }
 
@@ -319,6 +318,8 @@ public class EndPointHandler extends TextWebSocketHandler {
 
         userLocations.put(userSession.getUsername(), new UserLocation(lat, lng));
         System.out.println(String.format("User %s, updated location lat: %f; lng: %f", userSession.getUsername(), lat, lng));
+
+        subscriberController.notifySubscribersOnLocationChanged(userSession.getUsername(), lat, lng);
     }
     //endregion
 
@@ -355,6 +356,10 @@ public class EndPointHandler extends TextWebSocketHandler {
                 break;
             case "requestLiveStreamers":
                 handleRequestLiveStreamersEvent(userSession, receivedMessage);
+                break;
+            case "requestUserLocations":
+                handleRequestUserLocationsEvent(userSession, receivedMessage);
+                break;
             default:
 
         }
@@ -458,23 +463,32 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("event", "requestAllUsers");
             response.addProperty("payload", gson.toJson(users));
 
-            synchronized (userSession) {
+            synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
         }
     }
 
-    private void handleRequestOnlineUsersEvent(final UserSession userSession, final JsonObject receivedMessage) {
+    private void handleRequestOnlineUsersEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseListUsers(userSession)) {
+            List<User> users = userRepository.getOnlineUsers();
 
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "request");
+            response.addProperty("event", "requestOnlineUsers");
+            response.addProperty("payload", gson.toJson(users));
+
+            synchronized (userSession.getSession()) {
+                userSession.sendMessage(response);
+            }
         }
     }
 
-    private void handleRequestLiveStreamersEvent(final UserSession session, final  JsonObject receivedMessage) throws IOException {
-        if(Authoriser.authoriseRequestLiveStreamers(session)){
+    private void handleRequestLiveStreamersEvent(final UserSession session, final JsonObject receivedMessage) throws IOException {
+        if (Authoriser.authoriseRequestLiveStreamers(session)) {
             List<LiveWatcher> liveWatchers = new ArrayList<>();
 
-            for(String key : recordPipeline.keySet()){
+            for (String key : recordPipeline.keySet()) {
                 User user = userRepository.getUser(key);
                 liveWatchers.add(new LiveWatcher(user.getName(), user.getUsername()));
             }
@@ -485,7 +499,31 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("payload", gson.toJson(liveWatchers));
 
 
-            synchronized (session.getSession()){
+            synchronized (session.getSession()) {
+                session.sendMessage(response);
+            }
+        }
+    }
+
+    private void handleRequestUserLocationsEvent(final UserSession session, final JsonObject receivedMessage) throws IOException {
+        if (Authoriser.authoriseRequestLocation(session)) {
+            JsonObject response = new JsonObject();
+
+            response.addProperty("method", "request");
+            response.addProperty("event", "userLocations");
+
+            JsonArray jsonArray = new JsonArray();
+            for (String key : userLocations.keySet()) {
+                UserLocation currentLocation = userLocations.get(key);
+                JsonObject element = new JsonObject();
+                element.addProperty("username", key);
+                element.addProperty("lat", currentLocation.getLat());
+                element.addProperty("lng", currentLocation.getLng());
+                jsonArray.add(element);
+
+            }
+            response.add("payload", jsonArray);
+            synchronized (session.getSession()) {
                 session.sendMessage(response);
             }
         }
@@ -676,7 +714,7 @@ public class EndPointHandler extends TextWebSocketHandler {
                     response.addProperty("endSeekable", videoInfo.getSeekableEnd());
                     response.addProperty("videoDuration", videoInfo.getDuration());
 
-                    synchronized (session) {
+                    synchronized (session.getSession()) {
                         try {
                             session.sendMessage(response);
                         } catch (IOException e) {
@@ -695,7 +733,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             // play
             playMediaPipeline.play();
 
-            synchronized (session) {
+            synchronized (session.getSession()) {
                 session.sendMessage(response);
             }
 
@@ -975,6 +1013,9 @@ public class EndPointHandler extends TextWebSocketHandler {
             case "liveStreamers":
                 subscriberController.addLiveStreamerListener(session);
                 break;
+            case "mapItems":
+                subscriberController.addMapChangesSubscriber(session);
+                break;
             default:
 
         }
@@ -987,6 +1028,9 @@ public class EndPointHandler extends TextWebSocketHandler {
                 break;
             case "liveStreamers":
                 subscriberController.removeLiveStreamerListener(session);
+                break;
+            case "mapItems":
+                subscriberController.removeMapChangesSubscriber(session);
                 break;
             default:
         }
@@ -1017,7 +1061,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         UserSession stopperUser = registry.getBySession(session);
         if (stopperUser != null) {
             RecordMediaPipeline pipeline = recordPipeline.get(stopperUser.getUsername());
-            if(pipeline != null){
+            if (pipeline != null) {
                 recordPipeline.remove(pipeline);
             }
             stopperUser.release();

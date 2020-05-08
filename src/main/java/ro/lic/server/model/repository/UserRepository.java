@@ -45,6 +45,10 @@ public class UserRepository {
         return userDao.findAll();
     }
 
+    public List<User> getOnlineUsers(){
+        return userDao.findOnlineUsers();
+    }
+
     public List<User> getAllUsersByRole(Role role){
         return userDao.getAllUsersByRole(role);
     }

@@ -55,4 +55,12 @@ public class Authoriser {
     public static boolean authoriseRequestLiveStreamers(UserSession session){
         return  session.getRole() == Role.ADMIN;
     }
+
+    public static boolean authoriseToDisableUser(UserSession session){
+        return session.getRole() == Role.ADMIN;
+    }
+
+    public static boolean authoriseRequestLocation(UserSession session){
+        return session.getRole() == Role.ADMIN;
+    }
 }
