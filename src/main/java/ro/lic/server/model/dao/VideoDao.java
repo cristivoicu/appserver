@@ -14,4 +14,7 @@ public interface VideoDao extends CrudRepository<Video, Long> {
     @Query(value = "select * from videos where user_id = :userId", nativeQuery = true)
     List<Video> getVideoForUser(Long userId);
 
+    @Query(value = "select * from videos where user_id = :userId and Date(date) = :date", nativeQuery = true)
+    List<Video> getVideoForUserAtDate(Long userId, String date);
+
 }

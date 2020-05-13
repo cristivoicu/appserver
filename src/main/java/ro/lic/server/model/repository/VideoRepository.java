@@ -19,4 +19,8 @@ public class VideoRepository {
     public List<Video> getListVideoForUser(Long userId){
         return videoDao.getVideoForUser(userId);
     }
+
+    public List<Video> getListVideoForUserAtDate(Long userId, String date){
+        return videoDao.getVideoForUserAtDate(userId, date);
+    }
 }

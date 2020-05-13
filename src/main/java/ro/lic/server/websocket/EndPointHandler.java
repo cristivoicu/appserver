@@ -1,7 +1,7 @@
 package ro.lic.server.websocket;
 
 import com.google.gson.*;
-import com.mysql.cj.x.protobuf.MysqlxCursor;
+import com.google.gson.reflect.TypeToken;
 import org.kurento.client.*;
 import org.kurento.client.EventListener;
 import org.kurento.commons.exception.KurentoException;
@@ -13,15 +13,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import ro.lic.server.model.enums.Status;
+import ro.lic.server.model.tables.*;
 import ro.lic.server.model.non_db_models.LiveWatcher;
 import ro.lic.server.model.non_db_models.UserLocation;
-import ro.lic.server.model.repository.ActionRepository;
-import ro.lic.server.model.repository.ServerLogRepository;
-import ro.lic.server.model.repository.UserRepository;
-import ro.lic.server.model.repository.VideoRepository;
-import ro.lic.server.model.tables.ServerLog;
-import ro.lic.server.model.tables.User;
-import ro.lic.server.model.tables.Video;
+import ro.lic.server.model.repository.*;
 import ro.lic.server.websocket.security.Authoriser;
 import ro.lic.server.websocket.utils.*;
 import ro.lic.server.websocket.utils.pipeline.PlayMediaPipeline;
@@ -29,6 +24,7 @@ import ro.lic.server.websocket.utils.pipeline.RecordMediaPipeline;
 import ro.lic.server.websocket.utils.subscribe.SubscriberController;
 
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -64,6 +60,9 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     @Autowired
     private ServerLogRepository serverLogRepository;
+
+    @Autowired
+    private MapItemRepository mapItemRepository;
 
     @Autowired(required = true)
     private KurentoClient kurento;
@@ -190,6 +189,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             case "removeVideo":
                 break;
             case "mapItems":
+                handleMapItemEvent(session, receivedMessage);
                 break;
             case "location":
                 handleLocationEvent(session, receivedMessage);
@@ -308,8 +308,58 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     }
 
-    private void handleMapItemEvent(UserSession userSession, JsonObject receivedMessage) {
+    @Override
+    public boolean supportsPartialMessages() {
+        return true;
+    }
 
+    private void handleMapItemEvent(UserSession userSession, JsonObject receivedMessage) {
+        //mapItemRepository.clearTable();
+        JsonArray markers = receivedMessage.get("marks").getAsJsonArray();
+        JsonArray paths = receivedMessage.get("paths").getAsJsonArray();
+        JsonArray zones = receivedMessage.get("zones").getAsJsonArray();
+
+
+        for (int i = 0; i < paths.size(); i++) {
+            JsonObject current = new JsonParser().parse(paths.get(i).getAsString()).getAsJsonObject();
+            String name = current.get("name").getAsString();
+            String description = current.get("description").getAsString();
+            int color = current.get("color").getAsInt();
+            Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
+            }.getType();
+            ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
+
+            MapItem mapItem = new MapItem(name, description, color, "PATH", coordinates);
+            mapItemRepository.addMapItem(mapItem);
+        }
+
+        for (int i = 0; i < zones.size(); i++) {
+            JsonObject current = new JsonParser().parse(zones.get(i).getAsString()).getAsJsonObject();
+            String name = current.get("name").getAsString();
+            String description = current.get("description").getAsString();
+            int color = current.get("color").getAsInt();
+            Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
+            }.getType();
+            ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
+
+            MapItem mapItem = new MapItem(name, description, color, "ZONE", coordinates);
+            mapItemRepository.addMapItem(mapItem);
+        }
+
+        for (int i = 0; i < markers.size(); i++) {
+            JsonObject current = new JsonParser().parse(markers.get(i).getAsString()).getAsJsonObject();
+            String name = current.get("name").getAsString();
+            String description = current.get("description").getAsString();
+            int color = current.get("color").getAsInt();
+            Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
+            }.getType();
+            ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
+
+            MapItem mapItem = new MapItem(name, description, color, "MARKER", coordinates);
+            mapItemRepository.addMapItem(mapItem);
+        }
+
+        //todo: send fail or success message.
     }
 
     private void handleLocationEvent(UserSession userSession, JsonObject receivedMessage) {
@@ -359,6 +409,12 @@ public class EndPointHandler extends TextWebSocketHandler {
                 break;
             case "requestUserLocations":
                 handleRequestUserLocationsEvent(userSession, receivedMessage);
+                break;
+            case "requestUserLocation":
+                handleRequestUserLocationEvent(userSession, receivedMessage);
+                break;
+            case "requestMapItems":
+                handleRequestMapItemsEvent(userSession, receivedMessage);
                 break;
             default:
 
@@ -421,9 +477,16 @@ public class EndPointHandler extends TextWebSocketHandler {
     private void handleRequestRecordedVideosEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseListRecordedVideos(userSession)) {
             String forUser = receivedMessage.get("user").getAsString();
+            String date = null;
             User user = userRepository.getUser(forUser);
 
-            List<Video> videos = videoRepository.getListVideoForUser(user.getId());
+            List<Video> videos = null;
+            if (receivedMessage.has("date")) {
+                date = receivedMessage.get("date").getAsString();
+                videos = videoRepository.getListVideoForUserAtDate(user.getId(), date);
+            } else {
+                videos = videoRepository.getListVideoForUser(user.getId());
+            }
 
             JsonObject response = new JsonObject();
             response.addProperty("method", "request");
@@ -526,6 +589,44 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (session.getSession()) {
                 session.sendMessage(response);
             }
+        }
+    }
+
+    private void handleRequestUserLocationEvent(final UserSession session, JsonObject receivedMessage) throws IOException {
+        if (Authoriser.authoriseRequestLocation(session)) {
+            String username = receivedMessage.get("user").getAsString();
+            JsonObject response = new JsonObject();
+
+            response.addProperty("method", "request");
+            response.addProperty("event", "userLocation");
+
+            if (userLocations.containsKey(username)) {
+                UserLocation currentLocation = userLocations.get(username);
+                JsonObject payload = new JsonObject();
+                payload.addProperty("lat", currentLocation.getLat());
+                payload.addProperty("lng", currentLocation.getLng());
+                response.add("payload", payload);
+            }else{
+                response.addProperty("payload", "dataEmpty");
+            }
+
+            synchronized (session.getSession()) {
+                session.sendMessage(response);
+            }
+        }
+    }
+
+    public void handleRequestMapItemsEvent(UserSession session, JsonObject receivedMessage) throws IOException {
+        JsonObject response = new JsonObject();
+
+        response.addProperty("method", "request");
+        response.addProperty("event", "requestMapItems");
+
+        List<MapItem> mapItems = mapItemRepository.getMapItems();
+        response.addProperty("payload", gson.toJson(mapItems));
+
+        synchronized (session.getSession()) {
+            session.sendMessage(response);
         }
     }
     //endregion
