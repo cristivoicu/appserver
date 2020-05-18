@@ -23,4 +23,12 @@ public class VideoRepository {
     public List<Video> getListVideoForUserAtDate(Long userId, String date){
         return videoDao.getVideoForUserAtDate(userId, date);
     }
+
+    public List<Video> getAllVideos(){
+        return videoDao.getAllVideos();
+    }
+
+    public List<Video> getAllVideosAtDate(String date){
+        return videoDao.getAllVideosAtDate(date);
+    }
 }

@@ -19,6 +19,7 @@ public class Video implements Serializable {
         this.name = name;
         this.user = user;
         this.date = date;
+        this.username = user.getUsername();
     }
     //endregion
 
@@ -42,6 +43,10 @@ public class Video implements Serializable {
     @Column(nullable = false)
     @Expose
     private Date date;
+
+    @Expose
+    @Transient
+    private String username;
     //endregion
 
     //region Getters and setters
@@ -59,6 +64,7 @@ public class Video implements Serializable {
 
     public void setUser(User user) {
         this.user = user;
+        this.username = user.getUsername();
     }
 
     public Date getDate() {
@@ -68,5 +74,14 @@ public class Video implements Serializable {
     public void setDate(Date date) {
         this.date = date;
     }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
     //endregion
 }

@@ -16,6 +16,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.socket.server.standard.ServerEndpointExporter;
+import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import ro.lic.server.model.enums.Role;
 import ro.lic.server.model.repository.UserRepository;
@@ -34,6 +35,14 @@ public class WebSocketConfiguration implements WebSocketConfigurer {
 
     @Autowired
     private UserRepository userDao;
+
+    @Bean
+    public ServletServerContainerFactoryBean createWebSocketContainer() {
+        ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
+        container.setMaxTextMessageBufferSize(9216);
+        container.setMaxBinaryMessageBufferSize(9216);
+        return container;
+    }
 
     @Bean
     public EndPointHandler callHandler() {

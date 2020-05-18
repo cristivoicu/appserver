@@ -314,7 +314,7 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     private void handleMapItemEvent(UserSession userSession, JsonObject receivedMessage) {
-        //mapItemRepository.clearTable();
+        mapItemRepository.clearTable();
         JsonArray markers = receivedMessage.get("marks").getAsJsonArray();
         JsonArray paths = receivedMessage.get("paths").getAsJsonArray();
         JsonArray zones = receivedMessage.get("zones").getAsJsonArray();
@@ -476,16 +476,36 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     private void handleRequestRecordedVideosEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         if (Authoriser.authoriseListRecordedVideos(userSession)) {
-            String forUser = receivedMessage.get("user").getAsString();
+            String forUser = null;
+            if(receivedMessage.has("user")){
+                forUser = receivedMessage.get("user").getAsString();
+            }
+
             String date = null;
             User user = userRepository.getUser(forUser);
 
             List<Video> videos = null;
-            if (receivedMessage.has("date")) {
-                date = receivedMessage.get("date").getAsString();
-                videos = videoRepository.getListVideoForUserAtDate(user.getId(), date);
-            } else {
-                videos = videoRepository.getListVideoForUser(user.getId());
+
+            if(forUser != null) {
+                if (receivedMessage.has("date")) {
+                    date = receivedMessage.get("date").getAsString();
+                    videos = videoRepository.getListVideoForUserAtDate(user.getId(), date);
+                } else {
+                    videos = videoRepository.getListVideoForUser(user.getId());
+                }
+            }else{
+                if (receivedMessage.has("date")) {
+                    date = receivedMessage.get("date").getAsString();
+                    videos = videoRepository.getAllVideosAtDate(date);
+                    for(Video video : videos){
+                        video.setUsername(video.getUser().getUsername());
+                    }
+                } else {
+                    videos = videoRepository.getAllVideos();
+                    for(Video video : videos){
+                        video.setUsername(video.getUser().getUsername());
+                    }
+                }
             }
 
             JsonObject response = new JsonObject();
