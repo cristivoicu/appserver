@@ -101,4 +101,13 @@ public class ServerLogRepository {
                 ServerLogActionType.MEDIA);
         serverLogDao.save(serverLog);
     }
+
+    public void unauthorisedAction(User user, String action){
+        ServerLog serverLog = new ServerLog(new Date(),
+                user,
+                String.format("User %s had denied action: %s", user.getUsername(), action),
+                Importance.HIGN,
+                ServerLogActionType.SECURITY);
+        serverLogDao.save(serverLog);
+    }
 }

@@ -19,6 +19,7 @@ public class UserSession {
     private final String username;
     private final WebSocketSession session;
     private final Role role;
+    private String token;
 
     private RecordMediaPipeline recordMediaPipeline = null;
 
@@ -27,6 +28,14 @@ public class UserSession {
         this.username = name;
         this.role = role;
 
+    }
+
+    public String getToken(){
+        return token;
+    }
+
+    public void setToken(String token) {
+        this.token = token;
     }
 
     public Role getRole() {

@@ -16,7 +16,7 @@ public class UserRepository {
     @Autowired
     UserDao userDao;
 
-    public void addUser(User user){
+    public void addUser(User user) {
         userDao.save(user);
     }
 
@@ -28,36 +28,36 @@ public class UserRepository {
         userDao.updateRole(userName, newRole.name());
     }
 
-    public Role authenticate(String username, String password){
+    public Role authenticate(String username, String password) {
         User user = userDao.getUserByUsername(username);
-        if(user == null || user.getStatus().equals(Status.DISABLED.name()))
+        if (user == null || user.getStatus().equals(Status.DISABLED.name()))
             return null;
         String hashPassword = user.getPassword();
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
         return encoder.matches(password, hashPassword) ? Role.valueOf(user.getRole()) : null;
     }
 
-    public Role getUserRoleByUsername(String username){
+    public Role getUserRoleByUsername(String username) {
         return userDao.getUserRoleByUsername(username);
     }
 
-    public List<User> getAllUsers(){
+    public List<User> getAllUsers() {
         return userDao.findAll();
     }
 
-    public List<User> getOnlineUsers(){
+    public List<User> getOnlineUsers() {
         return userDao.findOnlineUsers();
     }
 
-    public List<User> getAllUsersByRole(Role role){
+    public List<User> getAllUsersByRole(Role role) {
         return userDao.getAllUsersByRole(role);
     }
 
-    public User getUser(String username){
+    public User getUser(String username) {
         return userDao.getUserByUsername(username);
     }
 
-    public int updateUser(@Nonnull User user){
+    public int updateUser(@Nonnull User user) {
         return userDao.updateUser(user.getUsername(),
                 user.getName(),
                 user.getPhoneNumber(),
@@ -67,15 +67,19 @@ public class UserRepository {
                 user.getRole());
     }
 
-    public void setUserOnline(String username){
+    public void setUserOnline(String username) {
         userDao.updateOnlineStatus(username, Status.ONLINE.name());
     }
 
-    public void setUserOffline(String username){
+    public void setUserOffline(String username) {
         userDao.updateOnlineStatus(username, Status.OFFLINE.name());
     }
 
-    public void disableUser(String username){
+    public void disableUser(String username) {
         userDao.updateOnlineStatus(username, Status.DISABLED.name());
+    }
+
+    public String getProgramEnd(String username) {
+        return userDao.getProgramEnd(username);
     }
 }

@@ -1,5 +1,6 @@
 package ro.lic.server.websocket;
 
+import com.auth0.jwt.JWT;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import org.kurento.client.*;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import ro.lic.server.model.enums.Role;
 import ro.lic.server.model.enums.Status;
 import ro.lic.server.model.tables.*;
 import ro.lic.server.model.non_db_models.LiveWatcher;
@@ -85,7 +87,7 @@ public class EndPointHandler extends TextWebSocketHandler {
             recordPipeline.remove(name);
             subscriberController.notifySubscribersOnLiveStreamingStopped(new LiveWatcher(user.getName(), user.getUsername()));
         }
-
+        userLocations.remove(user.getUsername());
         userRepository.setUserOffline(user.getUsername());
         try {
             subscriberController.notifySubscribersOnUserStatusModified(Status.OFFLINE, user.getUsername());
@@ -116,7 +118,36 @@ public class EndPointHandler extends TextWebSocketHandler {
             // todo: set log error
         } else {
             System.out.println(String.format("User %s connected!", username));
-            UserSession userSession = new UserSession(session, username, userRepository.getUserRoleByUsername(username));
+
+            // create and sign an token
+            Role role = userRepository.getUserRoleByUsername(username);
+            String programEnd = userRepository.getProgramEnd(username);
+            String[] time = programEnd.split(":");
+            int hour = Integer.parseInt(time[0].trim());
+            int min = Integer.parseInt(time[1].trim());
+            Calendar calendar = Calendar.getInstance();
+            Date date = calendar.getTime();
+            date.setHours(hour);
+            date.setMinutes(min);
+            date.setSeconds(0);
+
+            String token = JWT.create()
+                    .withClaim("role", role.name())
+                    .withIssuer("AppServer")
+                    .withExpiresAt(date)
+                    .sign(Authoriser.getInstance().getAlgorithm());
+
+
+            JsonObject tokenMessage = new JsonObject();
+            tokenMessage.addProperty("method", "token");
+            tokenMessage.addProperty("token", token);
+
+            synchronized (session) {
+                session.sendMessage(new TextMessage(tokenMessage.toString()));
+            }
+
+            UserSession userSession = new UserSession(session, username, role);
+            userSession.setToken(token);
             registry.register(userSession);
 
             User user = userRepository.getUser(username);
@@ -207,7 +238,8 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param userSession     is the user session that send the message
      */
     private void handleEnrollEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseEnroll(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseEnroll(userSession, token)) {
             System.out.println("Enroll event: " + receivedMessage.toString());
             String userJson = receivedMessage.get("payload").getAsString();
             if (userJson != null) {
@@ -232,6 +264,18 @@ public class EndPointHandler extends TextWebSocketHandler {
                     userSession.sendMessage(response);
                 }
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Enroll new user");
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "update");
+            response.addProperty("event", "enroll");
+            response.addProperty("response", "failed");
+
+            synchronized (userSession.getSession()) {
+                userSession.sendMessage(response);
+            }
+            userSession.getSession().close();
         }
     }
 
@@ -242,7 +286,8 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param userSession     is the user session that send the message
      */
     private void handleUpdateUserEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseEditUser(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseEditUser(userSession, token)) {
             User userTarget = User.fromJson(receivedMessage.get("payload").getAsString());
 
             User user = userRepository.getUser(userSession.getUsername());
@@ -264,6 +309,18 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Update user");
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "update");
+            response.addProperty("event", "updateUser");
+            response.addProperty("response", "failed");
+
+            synchronized (userSession.getSession()) {
+                userSession.sendMessage(response);
+            }
+            userSession.getSession().close();
         }
     }
 
@@ -277,7 +334,8 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param userSession     is the user session that send the message
      */
     private void handleDisableUserEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseToDisableUser(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseToDisableUser(userSession, token)) {
             String userTargetUsername = receivedMessage.get("payload").getAsString();
 
             User admin = userRepository.getUser(userSession.getUsername());
@@ -301,6 +359,18 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Disable user");
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "update");
+            response.addProperty("event", "disableUser");
+            response.addProperty("response", "fail");
+
+            synchronized (userSession.getSession()) {
+                userSession.sendMessage(response);
+            }
+            userSession.getSession().close();
         }
     }
 
@@ -308,68 +378,91 @@ public class EndPointHandler extends TextWebSocketHandler {
 
     }
 
-    @Override
-    public boolean supportsPartialMessages() {
-        return true;
+    private void handleMapItemEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseAccessMapItems(userSession, token)) {
+            mapItemRepository.clearTable();
+            JsonArray markers = receivedMessage.get("marks").getAsJsonArray();
+            JsonArray paths = receivedMessage.get("paths").getAsJsonArray();
+            JsonArray zones = receivedMessage.get("zones").getAsJsonArray();
+
+
+            for (int i = 0; i < paths.size(); i++) {
+                JsonObject current = new JsonParser().parse(paths.get(i).getAsString()).getAsJsonObject();
+                String name = current.get("name").getAsString();
+                String description = current.get("description").getAsString();
+                int color = current.get("color").getAsInt();
+                Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
+                }.getType();
+                ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
+
+                MapItem mapItem = new MapItem(name, description, color, "PATH", coordinates);
+                mapItemRepository.addMapItem(mapItem);
+            }
+
+            for (int i = 0; i < zones.size(); i++) {
+                JsonObject current = new JsonParser().parse(zones.get(i).getAsString()).getAsJsonObject();
+                String name = current.get("name").getAsString();
+                String description = current.get("description").getAsString();
+                int color = current.get("color").getAsInt();
+                Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
+                }.getType();
+                ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
+
+                MapItem mapItem = new MapItem(name, description, color, "ZONE", coordinates);
+                mapItemRepository.addMapItem(mapItem);
+            }
+
+            for (int i = 0; i < markers.size(); i++) {
+                JsonObject current = new JsonParser().parse(markers.get(i).getAsString()).getAsJsonObject();
+                String name = current.get("name").getAsString();
+                String description = current.get("description").getAsString();
+                int color = current.get("color").getAsInt();
+                Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
+                }.getType();
+                ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
+
+                MapItem mapItem = new MapItem(name, description, color, "MARKER", coordinates);
+                mapItemRepository.addMapItem(mapItem);
+            }
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "update");
+            response.addProperty("event", "mapItems");
+            response.addProperty("response", "success");
+
+            synchronized (userSession.getSession()) {
+                userSession.sendMessage(response);
+            }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Modify map items");
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "update");
+            response.addProperty("event", "mapItems");
+            response.addProperty("response", "fail");
+
+            synchronized (userSession.getSession()) {
+                userSession.sendMessage(response);
+            }
+            userSession.getSession().close();
+        }
     }
 
-    private void handleMapItemEvent(UserSession userSession, JsonObject receivedMessage) {
-        mapItemRepository.clearTable();
-        JsonArray markers = receivedMessage.get("marks").getAsJsonArray();
-        JsonArray paths = receivedMessage.get("paths").getAsJsonArray();
-        JsonArray zones = receivedMessage.get("zones").getAsJsonArray();
+    private void handleLocationEvent(UserSession userSession, JsonObject receivedMessage) throws IOException {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(userSession, token)) {
+            Double lat = receivedMessage.get("payload").getAsJsonObject().get("lat").getAsDouble();
+            Double lng = receivedMessage.get("payload").getAsJsonObject().get("lng").getAsDouble();
 
+            userLocations.put(userSession.getUsername(), new UserLocation(lat, lng));
+            System.out.println(String.format("User %s, updated location lat: %f; lng: %f", userSession.getUsername(), lat, lng));
 
-        for (int i = 0; i < paths.size(); i++) {
-            JsonObject current = new JsonParser().parse(paths.get(i).getAsString()).getAsJsonObject();
-            String name = current.get("name").getAsString();
-            String description = current.get("description").getAsString();
-            int color = current.get("color").getAsInt();
-            Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
-            }.getType();
-            ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
-
-            MapItem mapItem = new MapItem(name, description, color, "PATH", coordinates);
-            mapItemRepository.addMapItem(mapItem);
+            subscriberController.notifySubscribersOnLocationChanged(userSession.getUsername(), lat, lng);
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Update user location");
+            userSession.getSession().close();
         }
-
-        for (int i = 0; i < zones.size(); i++) {
-            JsonObject current = new JsonParser().parse(zones.get(i).getAsString()).getAsJsonObject();
-            String name = current.get("name").getAsString();
-            String description = current.get("description").getAsString();
-            int color = current.get("color").getAsInt();
-            Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
-            }.getType();
-            ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
-
-            MapItem mapItem = new MapItem(name, description, color, "ZONE", coordinates);
-            mapItemRepository.addMapItem(mapItem);
-        }
-
-        for (int i = 0; i < markers.size(); i++) {
-            JsonObject current = new JsonParser().parse(markers.get(i).getAsString()).getAsJsonObject();
-            String name = current.get("name").getAsString();
-            String description = current.get("description").getAsString();
-            int color = current.get("color").getAsInt();
-            Type latLngListType = new TypeToken<ArrayList<Coordinates>>() {
-            }.getType();
-            ArrayList<Coordinates> coordinates = gson.fromJson(current.get("coordinates"), latLngListType);
-
-            MapItem mapItem = new MapItem(name, description, color, "MARKER", coordinates);
-            mapItemRepository.addMapItem(mapItem);
-        }
-
-        //todo: send fail or success message.
-    }
-
-    private void handleLocationEvent(UserSession userSession, JsonObject receivedMessage) {
-        Double lat = receivedMessage.get("payload").getAsJsonObject().get("lat").getAsDouble();
-        Double lng = receivedMessage.get("payload").getAsJsonObject().get("lng").getAsDouble();
-
-        userLocations.put(userSession.getUsername(), new UserLocation(lat, lng));
-        System.out.println(String.format("User %s, updated location lat: %f; lng: %f", userSession.getUsername(), lat, lng));
-
-        subscriberController.notifySubscribersOnLocationChanged(userSession.getUsername(), lat, lng);
     }
     //endregion
 
@@ -422,7 +515,8 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     private void handleRequestUserToStreamEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseRequestUserToStream(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseRequestUserToStream(userSession, token)) {
             String username = receivedMessage.get("user").getAsString();
 
             UserSession userTarget = registry.getByName(username);
@@ -433,11 +527,16 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userTarget.getSession()) {
                 userTarget.sendMessage(messsage);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request live streaming");
+            userSession.getSession().close();
         }
     }
 
     private void handleRequestTimelineEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseListTimeline(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseListTimeline(userSession, token)) {
             // target user
             String forUser = receivedMessage.get("user").getAsString();
             String dateString = receivedMessage.get("date").getAsString();
@@ -454,11 +553,16 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request user timeline");
+            userSession.getSession().close();
         }
     }
 
     private void handleRequestServerLogEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseListTimeline(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseListTimeline(userSession, token)) {
             String dateString = receivedMessage.get("date").getAsString();
 
             List<ServerLog> serverLogs = serverLogRepository.getLogOnDate(dateString);
@@ -471,13 +575,18 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request server log");
+            userSession.getSession().close();
         }
     }
 
     private void handleRequestRecordedVideosEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseListRecordedVideos(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseListRecordedVideos(userSession, token)) {
             String forUser = null;
-            if(receivedMessage.has("user")){
+            if (receivedMessage.has("user")) {
                 forUser = receivedMessage.get("user").getAsString();
             }
 
@@ -486,23 +595,23 @@ public class EndPointHandler extends TextWebSocketHandler {
 
             List<Video> videos = null;
 
-            if(forUser != null) {
+            if (forUser != null) {
                 if (receivedMessage.has("date")) {
                     date = receivedMessage.get("date").getAsString();
                     videos = videoRepository.getListVideoForUserAtDate(user.getId(), date);
                 } else {
                     videos = videoRepository.getListVideoForUser(user.getId());
                 }
-            }else{
+            } else {
                 if (receivedMessage.has("date")) {
                     date = receivedMessage.get("date").getAsString();
                     videos = videoRepository.getAllVideosAtDate(date);
-                    for(Video video : videos){
+                    for (Video video : videos) {
                         video.setUsername(video.getUser().getUsername());
                     }
                 } else {
                     videos = videoRepository.getAllVideos();
-                    for(Video video : videos){
+                    for (Video video : videos) {
                         video.setUsername(video.getUser().getUsername());
                     }
                 }
@@ -516,12 +625,17 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request recorded videos");
+            userSession.getSession().close();
         }
     }
 
     private void handleRequestUserDataEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         String requestedUsername = receivedMessage.get("user").getAsString();
-        if (Authoriser.authoriseRequestUserData(userSession, requestedUsername)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseRequestUserData(userSession, requestedUsername, token)) {
             User userData = userRepository.getUser(requestedUsername);
 
             JsonObject response = new JsonObject();
@@ -532,12 +646,16 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request user data");
+            userSession.getSession().close();
         }
-
     }
 
     private void handleRequestAllUsersEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseListUsers(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseListUsers(userSession, token)) {
 
             List<User> users = userRepository.getAllUsers();
 
@@ -549,11 +667,16 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request all users data");
+            userSession.getSession().close();
         }
     }
 
     private void handleRequestOnlineUsersEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseListUsers(userSession)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseListUsers(userSession, token)) {
             List<User> users = userRepository.getOnlineUsers();
 
             JsonObject response = new JsonObject();
@@ -564,11 +687,16 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (userSession.getSession()) {
                 userSession.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(userSession.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request online users");
+            userSession.getSession().close();
         }
     }
 
     private void handleRequestLiveStreamersEvent(final UserSession session, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseRequestLiveStreamers(session)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseRequestLiveStreamers(session, token)) {
             List<LiveWatcher> liveWatchers = new ArrayList<>();
 
             for (String key : recordPipeline.keySet()) {
@@ -581,15 +709,19 @@ public class EndPointHandler extends TextWebSocketHandler {
             response.addProperty("event", "requestLiveStreamers");
             response.addProperty("payload", gson.toJson(liveWatchers));
 
-
             synchronized (session.getSession()) {
                 session.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(session.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request live streamers");
+            session.getSession().close();
         }
     }
 
     private void handleRequestUserLocationsEvent(final UserSession session, final JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseRequestLocation(session)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseRequestLocation(session, token)) {
             JsonObject response = new JsonObject();
 
             response.addProperty("method", "request");
@@ -609,11 +741,16 @@ public class EndPointHandler extends TextWebSocketHandler {
             synchronized (session.getSession()) {
                 session.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(session.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request live streaming");
+            session.getSession().close();
         }
     }
 
     private void handleRequestUserLocationEvent(final UserSession session, JsonObject receivedMessage) throws IOException {
-        if (Authoriser.authoriseRequestLocation(session)) {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseRequestLocation(session, token)) {
             String username = receivedMessage.get("user").getAsString();
             JsonObject response = new JsonObject();
 
@@ -626,27 +763,38 @@ public class EndPointHandler extends TextWebSocketHandler {
                 payload.addProperty("lat", currentLocation.getLat());
                 payload.addProperty("lng", currentLocation.getLng());
                 response.add("payload", payload);
-            }else{
+            } else {
                 response.addProperty("payload", "dataEmpty");
             }
 
             synchronized (session.getSession()) {
                 session.sendMessage(response);
             }
+        } else {
+            User user = userRepository.getUser(session.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request user location");
+            session.getSession().close();
         }
     }
 
     public void handleRequestMapItemsEvent(UserSession session, JsonObject receivedMessage) throws IOException {
-        JsonObject response = new JsonObject();
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseAccessMapItems(session, token)) {
+            JsonObject response = new JsonObject();
 
-        response.addProperty("method", "request");
-        response.addProperty("event", "requestMapItems");
+            response.addProperty("method", "request");
+            response.addProperty("event", "requestMapItems");
 
-        List<MapItem> mapItems = mapItemRepository.getMapItems();
-        response.addProperty("payload", gson.toJson(mapItems));
+            List<MapItem> mapItems = mapItemRepository.getMapItems();
+            response.addProperty("payload", gson.toJson(mapItems));
 
-        synchronized (session.getSession()) {
-            session.sendMessage(response);
+            synchronized (session.getSession()) {
+                session.sendMessage(response);
+            }
+        } else {
+            User user = userRepository.getUser(session.getUsername());
+            serverLogRepository.unauthorisedAction(user, "Request map items");
+            session.getSession().close();
         }
     }
     //endregion
@@ -700,24 +848,29 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param session         is the websocket open connection of the message sender
      * @param receivedMessage is the message received by the server
      */
-    private void handleIceCandidateEvent(UserSession session, JsonObject receivedMessage) {
-        JsonObject candidate = receivedMessage.get("candidate").getAsJsonObject();
-        String iceFor = candidate.get("iceFor").getAsString();
+    private void handleIceCandidateEvent(UserSession session, JsonObject receivedMessage) throws IOException {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            JsonObject candidate = receivedMessage.get("candidate").getAsJsonObject();
+            String iceFor = candidate.get("iceFor").getAsString();
 
-        IceCandidate cand = new IceCandidate(candidate.get("candidate").getAsString(),
-                candidate.get("sdpMid").getAsString(),
-                candidate.get("sdpMLineIndex").getAsInt());
-        switch (iceFor) {
-            case ICE_FOR_LIVE:
-                session.addCandidateLive(cand);
-                break;
-            case ICE_FOR_PLAY:
-                PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
-                playMediaPipeline.addIceCandidate(cand);
-                break;
-            case ICE_FOR_REC:
-                session.addCandidateRec(cand);
-                break;
+            IceCandidate cand = new IceCandidate(candidate.get("candidate").getAsString(),
+                    candidate.get("sdpMid").getAsString(),
+                    candidate.get("sdpMLineIndex").getAsInt());
+            switch (iceFor) {
+                case ICE_FOR_LIVE:
+                    session.addCandidateLive(cand);
+                    break;
+                case ICE_FOR_PLAY:
+                    PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
+                    playMediaPipeline.addIceCandidate(cand);
+                    break;
+                case ICE_FOR_REC:
+                    session.addCandidateRec(cand);
+                    break;
+            }
+        }else{
+            session.getSession().close();
         }
     }
 
@@ -759,112 +912,117 @@ public class EndPointHandler extends TextWebSocketHandler {
      *                        </ul></p>
      */
     private void handlePlayVideoRequestEvent(final UserSession session, final JsonObject receivedMessage) throws IOException {
-        JsonObject response = new JsonObject();
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            JsonObject response = new JsonObject();
 
-        response.addProperty("method", "media");
-        response.addProperty("event", "playVideoRequest");
+            response.addProperty("method", "media");
+            response.addProperty("event", "playVideoRequest");
 
-        if (Authoriser.authorisePlayVideo(session)) {
-            final User user = userRepository.getUser(session.getUsername());
-            //actionRepository.userStartedPlaybackVideo(user);
-            serverLogRepository.userStartedPlayback(user);
+            if (Authoriser.authorisePlayVideo(session, token)) {
+                final User user = userRepository.getUser(session.getUsername());
+                //actionRepository.userStartedPlaybackVideo(user);
+                serverLogRepository.userStartedPlayback(user);
 
 
-            String sdpOffer = receivedMessage.get("sdpOffer").getAsString();
-            String mediaPath = receivedMessage.get("path").getAsString();
+                String sdpOffer = receivedMessage.get("sdpOffer").getAsString();
+                String mediaPath = receivedMessage.get("path").getAsString();
 
-            // create media pipeline
-            final PlayMediaPipeline playMediaPipeline = new PlayMediaPipeline(kurento, mediaPath, session.getSession());
-            playPipelines.put(session.getSessionId(), playMediaPipeline);
+                // create media pipeline
+                final PlayMediaPipeline playMediaPipeline = new PlayMediaPipeline(kurento, mediaPath, session.getSession());
+                playPipelines.put(session.getSessionId(), playMediaPipeline);
 
-            // add error listener
-            playMediaPipeline.getPlayer().addErrorListener(new EventListener<ErrorEvent>() {
-                @Override
-                public void onEvent(ErrorEvent errorEvent) {
-                    System.out.println("Player error event...");
-                    //actionRepository.userEndedPlaybackVideo(user);
-                    serverLogRepository.userEndedPlayback(user);
-                    playMediaPipeline.sendPlayEnd(session.getSession());
-                    playPipelines.remove(session.getSessionId());
-                }
-            });
-            playMediaPipeline.getPlayer().addEndOfStreamListener(new EventListener<EndOfStreamEvent>() {
-                @Override
-                public void onEvent(EndOfStreamEvent endOfStreamEvent) {
-                    System.out.println("Player end of stream event...");
-                    //actionRepository.userEndedPlaybackVideo(user);
-                    serverLogRepository.userEndedPlayback(user);
-                    playMediaPipeline.sendPlayEnd(session.getSession());
-                    playPipelines.remove(session.getSessionId());
-                }
-            });
+                // add error listener
+                playMediaPipeline.getPlayer().addErrorListener(new EventListener<ErrorEvent>() {
+                    @Override
+                    public void onEvent(ErrorEvent errorEvent) {
+                        System.out.println("Player error event...");
+                        //actionRepository.userEndedPlaybackVideo(user);
+                        serverLogRepository.userEndedPlayback(user);
+                        playMediaPipeline.sendPlayEnd(session.getSession());
+                        playPipelines.remove(session.getSessionId());
+                    }
+                });
+                playMediaPipeline.getPlayer().addEndOfStreamListener(new EventListener<EndOfStreamEvent>() {
+                    @Override
+                    public void onEvent(EndOfStreamEvent endOfStreamEvent) {
+                        System.out.println("Player end of stream event...");
+                        //actionRepository.userEndedPlaybackVideo(user);
+                        serverLogRepository.userEndedPlayback(user);
+                        playMediaPipeline.sendPlayEnd(session.getSession());
+                        playPipelines.remove(session.getSessionId());
+                    }
+                });
 
-            playMediaPipeline.getWebRtc().addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
-                @Override
-                public void onEvent(IceCandidateFoundEvent event) {
-                    JsonObject response = new JsonObject();
-                    response.addProperty("method", "media");
-                    response.addProperty("event", "iceCandidate");
-                    JsonObject candidate = new JsonObject();
-                    candidate.addProperty("for", SEND_ICE_FOR_PLAY);
-                    candidate.add("candidate", JsonUtils
-                            .toJsonObject(event.getCandidate()));
-                    response.add("candidate", candidate);
-                    synchronized (session.getSession()) {
-                        try {
-                            session.sendMessage(response);
-                        } catch (IOException e) {
-                            e.printStackTrace();
+                playMediaPipeline.getWebRtc().addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
+                    @Override
+                    public void onEvent(IceCandidateFoundEvent event) {
+                        JsonObject response = new JsonObject();
+                        response.addProperty("method", "media");
+                        response.addProperty("event", "iceCandidate");
+                        JsonObject candidate = new JsonObject();
+                        candidate.addProperty("for", SEND_ICE_FOR_PLAY);
+                        candidate.add("candidate", JsonUtils
+                                .toJsonObject(event.getCandidate()));
+                        response.add("candidate", candidate);
+                        synchronized (session.getSession()) {
+                            try {
+                                session.sendMessage(response);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            // get video info and send it to the user
-            playMediaPipeline.getWebRtc().addMediaStateChangedListener(new EventListener<MediaStateChangedEvent>() {
-                @Override
-                public void onEvent(MediaStateChangedEvent mediaStateChangedEvent) {
-                    System.out.println("Media state changed event...");
-                    VideoInfo videoInfo = playMediaPipeline.getPlayer().getVideoInfo();
+                // get video info and send it to the user
+                playMediaPipeline.getWebRtc().addMediaStateChangedListener(new EventListener<MediaStateChangedEvent>() {
+                    @Override
+                    public void onEvent(MediaStateChangedEvent mediaStateChangedEvent) {
+                        System.out.println("Media state changed event...");
+                        VideoInfo videoInfo = playMediaPipeline.getPlayer().getVideoInfo();
 
-                    JsonObject response = new JsonObject();
-                    response.addProperty("method", "media");
-                    response.addProperty("event", "videoInfo");
-                    response.addProperty("isSeekable", videoInfo.getIsSeekable());
-                    response.addProperty("initSeekable", videoInfo.getSeekableInit());
-                    response.addProperty("endSeekable", videoInfo.getSeekableEnd());
-                    response.addProperty("videoDuration", videoInfo.getDuration());
+                        JsonObject response = new JsonObject();
+                        response.addProperty("method", "media");
+                        response.addProperty("event", "videoInfo");
+                        response.addProperty("isSeekable", videoInfo.getIsSeekable());
+                        response.addProperty("initSeekable", videoInfo.getSeekableInit());
+                        response.addProperty("endSeekable", videoInfo.getSeekableEnd());
+                        response.addProperty("videoDuration", videoInfo.getDuration());
 
-                    synchronized (session.getSession()) {
-                        try {
-                            session.sendMessage(response);
-                        } catch (IOException e) {
-                            e.printStackTrace();
+                        synchronized (session.getSession()) {
+                            try {
+                                session.sendMessage(response);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
                         }
                     }
+                });
+
+                // SDP negotiation
+                String sdpAnswer = playMediaPipeline.generateSdpAnswer(sdpOffer);
+
+                response.addProperty("response", "accepted");
+                response.addProperty("sdpAnswer", sdpAnswer);
+
+                // play
+                playMediaPipeline.play();
+
+                synchronized (session.getSession()) {
+                    session.sendMessage(response);
                 }
-            });
 
-            // SDP negotiation
-            String sdpAnswer = playMediaPipeline.generateSdpAnswer(sdpOffer);
+                // gather candidates
+                playMediaPipeline.getWebRtc().gatherCandidates();
 
-            response.addProperty("response", "accepted");
-            response.addProperty("sdpAnswer", sdpAnswer);
-
-            // play
-            playMediaPipeline.play();
-
-            synchronized (session.getSession()) {
+            } else {
+                response.addProperty("response", "rejected");
+                response.addProperty("reason", "notAuthorised");
                 session.sendMessage(response);
             }
-
-            // gather candidates
-            playMediaPipeline.getWebRtc().gatherCandidates();
-
-        } else {
-            response.addProperty("response", "rejected");
-            response.addProperty("reason", "notAuthorised");
-            session.sendMessage(response);
+        }else{
+            session.getSession().close();
         }
     }
 
@@ -876,10 +1034,13 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param receivedMessage is the message received by application server
      */
     private void handlePauseVideoRequestEvent(UserSession session, JsonObject receivedMessage) {
-        PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
-        if (playMediaPipeline == null)
-            return;
-        playMediaPipeline.getPlayer().pause();
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
+            if (playMediaPipeline == null)
+                return;
+            playMediaPipeline.getPlayer().pause();
+        }
     }
 
     /**
@@ -891,23 +1052,28 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param receivedMessage is the message received by application server
      */
     private void handleResumeVideoRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
-        PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
-        if (playMediaPipeline == null)
-            return;
-        playMediaPipeline.getPlayer().play();
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
+            if (playMediaPipeline == null)
+                return;
+            playMediaPipeline.getPlayer().play();
 
-        VideoInfo videoInfo = playMediaPipeline.getPlayer().getVideoInfo();
+            VideoInfo videoInfo = playMediaPipeline.getPlayer().getVideoInfo();
 
-        JsonObject response = new JsonObject();
-        response.addProperty("method", "media");
-        response.addProperty("event", "videoInfo");
-        response.addProperty("isSeekable", videoInfo.getIsSeekable());
-        response.addProperty("initSeekable", videoInfo.getSeekableInit());
-        response.addProperty("endSeekable", videoInfo.getSeekableEnd());
-        response.addProperty("videoDuration", videoInfo.getDuration());
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "media");
+            response.addProperty("event", "videoInfo");
+            response.addProperty("isSeekable", videoInfo.getIsSeekable());
+            response.addProperty("initSeekable", videoInfo.getSeekableInit());
+            response.addProperty("endSeekable", videoInfo.getSeekableEnd());
+            response.addProperty("videoDuration", videoInfo.getDuration());
 
-        synchronized (session) {
-            session.sendMessage(response);
+            synchronized (session) {
+                session.sendMessage(response);
+            }
+        }else{
+            session.getSession().close();
         }
     }
 
@@ -923,18 +1089,23 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param receivedMessage is the message received by application server
      */
     private void handleGetVideoPositionRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
-        PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
-        if (playMediaPipeline != null && !playMediaPipeline.isStreamEnded()) {
-            long currentPosition = playMediaPipeline.getPlayer().getPosition();
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
+            if (playMediaPipeline != null && !playMediaPipeline.isStreamEnded()) {
+                long currentPosition = playMediaPipeline.getPlayer().getPosition();
 
-            JsonObject response = new JsonObject();
-            response.addProperty("method", "media");
-            response.addProperty("event", "getVideoPositionRequest");
-            response.addProperty("position", currentPosition);
+                JsonObject response = new JsonObject();
+                response.addProperty("method", "media");
+                response.addProperty("event", "getVideoPositionRequest");
+                response.addProperty("position", currentPosition);
 
-            synchronized (session.getSession()) {
-                session.sendMessage(response);
+                synchronized (session.getSession()) {
+                    session.sendMessage(response);
+                }
             }
+        }else{
+            session.getSession().close();
         }
     }
 
@@ -946,20 +1117,25 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param receivedMessage is the message received by application server
      */
     private void handleSeekVideoRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
-        PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
-        try {
-            long position = receivedMessage.get("position").getAsLong();
-            playMediaPipeline.getPlayer().setPosition(position);
-        } catch (KurentoException e) {
-            log.debug("The seek cannot be performed");
-            JsonObject response = new JsonObject();
-            response.addProperty("method", "media");
-            response.addProperty("event", "seekVideoRequest");
-            response.addProperty("message", "Seek failed");
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
+            try {
+                long position = receivedMessage.get("position").getAsLong();
+                playMediaPipeline.getPlayer().setPosition(position);
+            } catch (KurentoException e) {
+                log.debug("The seek cannot be performed");
+                JsonObject response = new JsonObject();
+                response.addProperty("method", "media");
+                response.addProperty("event", "seekVideoRequest");
+                response.addProperty("message", "Seek failed");
 
-            synchronized (session) {
-                session.sendMessage(response);
+                synchronized (session) {
+                    session.sendMessage(response);
+                }
             }
+        }else{
+            session.getSession().close();
         }
     }
 
@@ -970,12 +1146,15 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param receivedMessage is the message received by application server
      */
     private void handleStopVideoRequestEvent(UserSession session, JsonObject receivedMessage) {
-        User user = userRepository.getUser(session.getUsername());
-        //actionRepository.userEndedPlaybackVideo(user);
-        serverLogRepository.userEndedPlayback(user);
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            User user = userRepository.getUser(session.getUsername());
+            //actionRepository.userEndedPlaybackVideo(user);
+            serverLogRepository.userEndedPlayback(user);
 
-        PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
-        playMediaPipeline.getPlayer().stop();
+            PlayMediaPipeline playMediaPipeline = playPipelines.get(session.getSessionId());
+            playMediaPipeline.getPlayer().stop();
+        }
     }
 
     /**
@@ -992,72 +1171,77 @@ public class EndPointHandler extends TextWebSocketHandler {
      * @param receivedMessage is the message received by application server
      */
     private void handleStartVideoStreamRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
-        String from = session.getUsername();
-        String sdpOffer = receivedMessage.getAsJsonPrimitive("sdpOffer").getAsString();
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            String from = session.getUsername();
+            String sdpOffer = receivedMessage.getAsJsonPrimitive("sdpOffer").getAsString();
 
-        // media logic
-        RecordMediaPipeline recordMediaPipeline = new RecordMediaPipeline(kurento, from);
+            // media logic
+            RecordMediaPipeline recordMediaPipeline = new RecordMediaPipeline(kurento, from);
 
-        recordPipeline.put(session.getUsername(), recordMediaPipeline);
+            recordPipeline.put(session.getUsername(), recordMediaPipeline);
 
-        session.setRecordMediaPipeline(recordMediaPipeline);
+            session.setRecordMediaPipeline(recordMediaPipeline);
 
-        // sdp negotiating
-        String sdpAnswer = recordMediaPipeline.generateSdpAnswerFromRecordingEp(sdpOffer);
+            // sdp negotiating
+            String sdpAnswer = recordMediaPipeline.generateSdpAnswerFromRecordingEp(sdpOffer);
 
-        recordMediaPipeline.getRecordingWebRtcEndpoint().addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
-            @Override
-            public void onEvent(IceCandidateFoundEvent event) {
-                JsonObject response = new JsonObject();
-                response.addProperty("method", "media");
-                response.addProperty("event", "iceCandidate");
-                JsonObject candidate = new JsonObject();
-                candidate.addProperty("for", SEND_ICE_FOR_REC);
-                candidate.add("candidate", JsonUtils
-                        .toJsonObject(event.getCandidate()));
-                response.add("candidate", candidate);
-                try {
-                    synchronized (session) {
-                        session.sendMessage(response);
+            recordMediaPipeline.getRecordingWebRtcEndpoint().addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
+                @Override
+                public void onEvent(IceCandidateFoundEvent event) {
+                    JsonObject response = new JsonObject();
+                    response.addProperty("method", "media");
+                    response.addProperty("event", "iceCandidate");
+                    JsonObject candidate = new JsonObject();
+                    candidate.addProperty("for", SEND_ICE_FOR_REC);
+                    candidate.add("candidate", JsonUtils
+                            .toJsonObject(event.getCandidate()));
+                    response.add("candidate", candidate);
+                    try {
+                        synchronized (session) {
+                            session.sendMessage(response);
+                        }
+                    } catch (IOException e) {
+                        log.debug(e.getMessage());
                     }
-                } catch (IOException e) {
-                    log.debug(e.getMessage());
                 }
+            });
+
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "media");
+            response.addProperty("event", "startVideoStreaming");
+            response.addProperty("response", "accepted");
+            response.addProperty("sdpAnswer", sdpAnswer);
+
+            synchronized (session) {
+                session.sendMessage(response);
             }
-        });
 
-        JsonObject response = new JsonObject();
-        response.addProperty("method", "media");
-        response.addProperty("event", "startVideoStreaming");
-        response.addProperty("response", "accepted");
-        response.addProperty("sdpAnswer", sdpAnswer);
+            recordMediaPipeline.getRecordingWebRtcEndpoint().gatherCandidates();
 
-        synchronized (session) {
-            session.sendMessage(response);
-        }
+            recordMediaPipeline.getRecordingWebRtcEndpoint().addMediaFlowInStateChangeListener(new EventListener<MediaFlowInStateChangeEvent>() {
+                @Override
+                public void onEvent(MediaFlowInStateChangeEvent mediaFlowInStateChangeEvent) {
+                    System.out.println("Media flow incoming");
+                    recordMediaPipeline.record();
+                }
+            });
 
-        recordMediaPipeline.getRecordingWebRtcEndpoint().gatherCandidates();
-
-        recordMediaPipeline.getRecordingWebRtcEndpoint().addMediaFlowInStateChangeListener(new EventListener<MediaFlowInStateChangeEvent>() {
-            @Override
-            public void onEvent(MediaFlowInStateChangeEvent mediaFlowInStateChangeEvent) {
-                System.out.println("Media flow incoming");
+            recordMediaPipeline.getRecordingWebRtcEndpoint().addMediaFlowOutStateChangeListener(mediaFlowOutStateChangeEvent -> {
+                System.out.println("Media out listener!");
                 recordMediaPipeline.record();
-            }
-        });
-
-        recordMediaPipeline.getRecordingWebRtcEndpoint().addMediaFlowOutStateChangeListener(mediaFlowOutStateChangeEvent -> {
-            System.out.println("Media out listener!");
-            recordMediaPipeline.record();
-        });
+            });
 
 
-        User user = userRepository.getUser(session.getUsername());
-        //actionRepository.userStartedRecordingSession(user);
-        serverLogRepository.userStartStreaming(user);
-        Video video = new Video(recordMediaPipeline.getRecordingPath(), user, new Date());
-        videoRepository.addVideo(video);
-        subscriberController.notifySubscribersOnLiveStreamingStarted(new LiveWatcher(user.getName(), user.getUsername()));
+            User user = userRepository.getUser(session.getUsername());
+            //actionRepository.userStartedRecordingSession(user);
+            serverLogRepository.userStartStreaming(user);
+            Video video = new Video(recordMediaPipeline.getRecordingPath(), user, new Date());
+            videoRepository.addVideo(video);
+            subscriberController.notifySubscribersOnLiveStreamingStarted(new LiveWatcher(user.getName(), user.getUsername()));
+        }else{
+            session.getSession().close();
+        }
     }
 
     /**
@@ -1065,80 +1249,95 @@ public class EndPointHandler extends TextWebSocketHandler {
      *
      * @param session is the session that send the message
      */
-    private void handleStopVideoSteramRequestEvent(UserSession session, JsonObject receivedMessage) {
-        RecordMediaPipeline pipeline = recordPipeline.get(session.getUsername());
-        User user = userRepository.getUser(session.getUsername());
-        // actionRepository.userEndedRecordingSession(user);
-        serverLogRepository.userEndStreaming(user);
-        // delete pipeline from active list!
-        pipeline.release();
-        recordPipeline.remove(session.getUsername());
-        subscriberController.notifySubscribersOnLiveStreamingStopped(new LiveWatcher(user.getName(), user.getUsername()));
+    private void handleStopVideoSteramRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            RecordMediaPipeline pipeline = recordPipeline.get(session.getUsername());
+            User user = userRepository.getUser(session.getUsername());
+            // actionRepository.userEndedRecordingSession(user);
+            serverLogRepository.userEndStreaming(user);
+            // delete pipeline from active list!
+            pipeline.release();
+            recordPipeline.remove(session.getUsername());
+            subscriberController.notifySubscribersOnLiveStreamingStopped(new LiveWatcher(user.getName(), user.getUsername()));
+        }else{
+            session.getSession().close();
+        }
     }
 
     //endregion
 
     private void handleLiveVideoWatchRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
-        UserSession userRecording = registry.getByName(receivedMessage.get("user").getAsString());
-        RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getUsername());
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            UserSession userRecording = registry.getByName(receivedMessage.get("user").getAsString());
+            RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getUsername());
 
-        recordMediaPipeline.addLiveWatcher(session);
-        session.setRecordMediaPipeline(recordMediaPipeline);
+            recordMediaPipeline.addLiveWatcher(session);
+            session.setRecordMediaPipeline(recordMediaPipeline);
 
-        // sdp negotiation
-        String sdpOffer = receivedMessage.get("sdpOffer").getAsString();
-        String sdpAnswer = recordMediaPipeline.getWebRtcEpOfSubscriber(session).processOffer(sdpOffer);
+            // sdp negotiation
+            String sdpOffer = receivedMessage.get("sdpOffer").getAsString();
+            String sdpAnswer = recordMediaPipeline.getWebRtcEpOfSubscriber(session).processOffer(sdpOffer);
 
-        recordMediaPipeline.getWebRtcEpOfSubscriber(session).addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
-            @Override
-            public void onEvent(IceCandidateFoundEvent event) {
-                JsonObject response = new JsonObject();
-                response.addProperty("method", "media");
-                response.addProperty("event", "iceCandidate");
-                JsonObject candidate = new JsonObject();
-                candidate.addProperty("for", SEND_ICE_FOR_LIVE);
-                candidate.add("candidate", JsonUtils
-                        .toJsonObject(event.getCandidate()));
-                response.add("candidate", candidate);
-                try {
-                    synchronized (session) {
-                        session.sendMessage(response);
+            recordMediaPipeline.getWebRtcEpOfSubscriber(session).addIceCandidateFoundListener(new EventListener<IceCandidateFoundEvent>() {
+                @Override
+                public void onEvent(IceCandidateFoundEvent event) {
+                    JsonObject response = new JsonObject();
+                    response.addProperty("method", "media");
+                    response.addProperty("event", "iceCandidate");
+                    JsonObject candidate = new JsonObject();
+                    candidate.addProperty("for", SEND_ICE_FOR_LIVE);
+                    candidate.add("candidate", JsonUtils
+                            .toJsonObject(event.getCandidate()));
+                    response.add("candidate", candidate);
+                    try {
+                        synchronized (session) {
+                            session.sendMessage(response);
+                        }
+                    } catch (IOException e) {
+                        log.debug(e.getMessage());
                     }
-                } catch (IOException e) {
-                    log.debug(e.getMessage());
                 }
+            });
+
+            JsonObject response = new JsonObject();
+            response.addProperty("method", "media");
+            response.addProperty("event", "liveWatchResponse");
+            response.addProperty("response", "accepted");
+            response.addProperty("sdpAnswer", sdpAnswer);
+
+            synchronized (session) {
+                System.out.println("Sending sdp ans message to " + session.getUsername());
+                session.sendMessage(response);
             }
-        });
 
-        JsonObject response = new JsonObject();
-        response.addProperty("method", "media");
-        response.addProperty("event", "liveWatchResponse");
-        response.addProperty("response", "accepted");
-        response.addProperty("sdpAnswer", sdpAnswer);
-
-        synchronized (session) {
-            System.out.println("Sending sdp ans message to " + session.getUsername());
-            session.sendMessage(response);
+            recordMediaPipeline.getWebRtcEpOfSubscriber(session).gatherCandidates();
+        }else{
+            session.getSession().close();
         }
-
-        recordMediaPipeline.getWebRtcEpOfSubscriber(session).gatherCandidates();
     }
     //endregion
 
     /***/
-    private void handleSubscribeMethodMessage(UserSession session, JsonObject receivedMessage) {
-        switch (receivedMessage.get("event").getAsString()) {
-            case "userUpdated":
-                subscriberController.addUserListListener(session);
-                break;
-            case "liveStreamers":
-                subscriberController.addLiveStreamerListener(session);
-                break;
-            case "mapItems":
-                subscriberController.addMapChangesSubscriber(session);
-                break;
-            default:
+    private void handleSubscribeMethodMessage(UserSession session, JsonObject receivedMessage) throws IOException {
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.authoriseSubscribe(session, token)) {
+            switch (receivedMessage.get("event").getAsString()) {
+                case "userUpdated":
+                    subscriberController.addUserListListener(session);
+                    break;
+                case "liveStreamers":
+                    subscriberController.addLiveStreamerListener(session);
+                    break;
+                case "mapItems":
+                    subscriberController.addMapChangesSubscriber(session);
+                    break;
+                default:
 
+            }
+        }else{
+            session.getSession().close();
         }
     }
 

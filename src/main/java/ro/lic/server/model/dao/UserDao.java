@@ -60,4 +60,7 @@ public interface UserDao extends CrudRepository<User, Long> {
     @Query(value = "select * from users where role = :role", nativeQuery = true)
     List<User> getAllUsersByRole(@Param("role") Role role);
 
+    @Query(value = "select program_end from users where username = :username", nativeQuery = true)
+    String getProgramEnd(String username);
+
 }
