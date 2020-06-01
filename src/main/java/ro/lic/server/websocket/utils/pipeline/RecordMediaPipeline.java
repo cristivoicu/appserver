@@ -26,6 +26,8 @@ public class RecordMediaPipeline {
 
     private final Map<String, WebRtcEndpoint> liveWatchers; //outgoings
 
+    private HubPort mHubPort;
+
     public RecordMediaPipeline(KurentoClient kurentoClient, String from) {
         // create recording path
         recordingPath = String.format("file:///home/kurento/UsersVideos/%s__%s%s", dateFormat.format(new Date()), from, RECORDING_EXT_WEBM);
@@ -108,6 +110,13 @@ public class RecordMediaPipeline {
         liveWatchers = new ConcurrentHashMap<>();
         recordingWebRtcEndpoint.connect(recorderEndpoint);
 
+        DispatcherOneToMany dispatcherOneToMany = new DispatcherOneToMany.Builder(mMediaPipeline).build();
+        mHubPort = new HubPort.Builder(dispatcherOneToMany).build();
+        mHubPort.setMaxOutputBitrate(3000);
+        recordingWebRtcEndpoint.connect(mHubPort);
+
+        dispatcherOneToMany.setSource(mHubPort);
+
         isStreaming = true;
     }
 
@@ -123,8 +132,8 @@ public class RecordMediaPipeline {
         liveWatcherWebRtcEndPoint.setMaxVideoRecvBandwidth(3000);
         liveWatcherWebRtcEndPoint.setMaxOutputBitrate(3000);
 
-        //mHubPort.connect(liveWatcherWebRtcEndPoint);
-        recordingWebRtcEndpoint.connect(liveWatcherWebRtcEndPoint);
+        mHubPort.connect(liveWatcherWebRtcEndPoint);
+        //recordingWebRtcEndpoint.connect(liveWatcherWebRtcEndPoint);
 
         liveWatchers.put(session.getSessionId(), liveWatcherWebRtcEndPoint);
     }
@@ -136,7 +145,8 @@ public class RecordMediaPipeline {
      */
     public void unsubscribe(UserSession session) {
         WebRtcEndpoint subscriberWebRtcEp = liveWatchers.get(session.getSessionId());
-        recordingWebRtcEndpoint.disconnect(subscriberWebRtcEp);
+        //recordingWebRtcEndpoint.disconnect(subscriberWebRtcEp);
+        mHubPort.disconnect(subscriberWebRtcEp);
 
         liveWatchers.remove(session.getSessionId());
     }
