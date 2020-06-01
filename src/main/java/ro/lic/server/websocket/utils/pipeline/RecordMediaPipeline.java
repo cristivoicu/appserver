@@ -99,7 +99,7 @@ public class RecordMediaPipeline {
             }
         });
 
-        recorderEndpoint.addStoppedListener(new EventListener<StoppedEvent>() {
+       recorderEndpoint.addStoppedListener(new EventListener<StoppedEvent>() {
             @Override
             public void onEvent(StoppedEvent stoppedEvent) {
                 System.out.println("RECORDER: Stopped event");
@@ -195,6 +195,10 @@ public class RecordMediaPipeline {
 
     public String getRecordingPath() {
         return recordingPath;
+    }
+
+    public boolean isStreaming(){
+        return isStreaming;
     }
 
     //endregion

@@ -836,6 +836,9 @@ public class EndPointHandler extends TextWebSocketHandler {
             case "startLiveVideoWatch":
                 handleLiveVideoWatchRequestEvent(userSession, receivedMessage);
                 break;
+            case "stopLiveVideoWatch":
+                handleStopWatchLiveVideoRequest(userSession, receivedMessage);
+                break;
             default:
 
         }
@@ -1266,7 +1269,6 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     //endregion
-
     private void handleLiveVideoWatchRequestEvent(UserSession session, JsonObject receivedMessage) throws IOException {
         String token = receivedMessage.get("token").getAsString();
         if (Authoriser.checkToken(session, token)) {
@@ -1315,6 +1317,18 @@ public class EndPointHandler extends TextWebSocketHandler {
             recordMediaPipeline.getWebRtcEpOfSubscriber(session).gatherCandidates();
         }else{
             session.getSession().close();
+        }
+    }
+
+    public void handleStopWatchLiveVideoRequest(UserSession session, JsonObject receivedMessage){
+        String token = receivedMessage.get("token").getAsString();
+        if (Authoriser.checkToken(session, token)) {
+            UserSession userRecording = registry.getByName(receivedMessage.get("user").getAsString());
+            RecordMediaPipeline recordMediaPipeline = recordPipeline.get(userRecording.getUsername());
+            // unsubscribe current session from live watch
+            recordMediaPipeline.unsubscribe(session);
+        }else{
+            System.out.println("ERROR: TOKEN INVALID (handleStopWatchLive)");
         }
     }
     //endregion
