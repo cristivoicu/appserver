@@ -5,8 +5,8 @@ import java.util.Date;
 
 public class Constants {
     public static final String KMS_WS_URI_PROP = "kms.url";
-    public static final String KMS_WS_URI_DEFAULT = "ws://192.168.216.143:8888/kurento";
-    public static final String KMS_WSS_URI_DEFAULT = "wss://192.168.216.143:8433/kurento";
+    public static final String KMS_WS_URI_DEFAULT = "ws://192.168.216.148:8888/kurento";
+    public static final String KMS_WSS_URI_DEFAULT = "wss://192.168.216.147:8433/kurento";
 
     private static final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-S");
 }

@@ -103,11 +103,6 @@ public class EndPointHandler extends TextWebSocketHandler {
     }
 
     @Override
-    protected void handlePongMessage(WebSocketSession session, PongMessage message) throws Exception {
-        super.handlePongMessage(session, message);
-    }
-
-    @Override
     public void afterConnectionEstablished(final WebSocketSession session) throws Exception {
         String username = session.getPrincipal().getName();
         username = username.substring(username.indexOf("[") + 1, username.indexOf("]"));
@@ -115,6 +110,7 @@ public class EndPointHandler extends TextWebSocketHandler {
         // check if user is already connected
         if (registry.exists(username)) {
             session.close(CloseStatus.SERVER_ERROR);
+
             // todo: set log error
         } else {
             System.out.println(String.format("User %s connected!", username));
@@ -514,7 +510,8 @@ public class EndPointHandler extends TextWebSocketHandler {
         }
     }
 
-    private void handleRequestUserToStreamEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
+    private void
+    handleRequestUserToStreamEvent(final UserSession userSession, final JsonObject receivedMessage) throws IOException {
         String token = receivedMessage.get("token").getAsString();
         if (Authoriser.authoriseRequestUserToStream(userSession, token)) {
             String username = receivedMessage.get("user").getAsString();
@@ -697,17 +694,17 @@ public class EndPointHandler extends TextWebSocketHandler {
     private void handleRequestLiveStreamersEvent(final UserSession session, final JsonObject receivedMessage) throws IOException {
         String token = receivedMessage.get("token").getAsString();
         if (Authoriser.authoriseRequestLiveStreamers(session, token)) {
-            List<LiveWatcher> liveWatchers = new ArrayList<>();
+            List<LiveWatcher> liveStreamers = new ArrayList<>();
 
             for (String key : recordPipeline.keySet()) {
                 User user = userRepository.getUser(key);
-                liveWatchers.add(new LiveWatcher(user.getName(), user.getUsername()));
+                liveStreamers.add(new LiveWatcher(user.getName(), user.getUsername()));
             }
 
             JsonObject response = new JsonObject();
             response.addProperty("method", "request");
             response.addProperty("event", "requestLiveStreamers");
-            response.addProperty("payload", gson.toJson(liveWatchers));
+            response.addProperty("payload", gson.toJson(liveStreamers));
 
             synchronized (session.getSession()) {
                 session.sendMessage(response);
